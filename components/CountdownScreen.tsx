@@ -24,9 +24,8 @@ function getModeInfo(mode: GameMode | MultiplayerVariant): {
         hint: 'Score as high as you can before the timer runs out!',
       }
     case 'endless':
-    case 'elimination':
       return {
-        difficulty: 'HARD',
+        difficulty: 'ENDLESS',
         variant: 'ENDLESS',
         hint: 'Endless mode decreases the time between codes!',
       }
@@ -72,7 +71,11 @@ export default function CountdownScreen({
 
           {/* Difficulty + Mode variant row */}
           <div className="flex items-center gap-4">
-            <span className="font-pixel text-4xl font-bold text-retro-text">{difficulty}</span>
+            {mode !== 'endless' && (
+              <span className="font-pixel text-4xl font-bold text-retro-text">
+                {difficulty}
+              </span>
+            )}
             <div className="flex items-center gap-2 rounded-full border-2 border-retro-border bg-retro-bg px-4 py-2">
               <PxlKitIcon icon={SparkleSmall} size={14} />
               <span className="font-pixel text-xs text-retro-text">{variant}</span>

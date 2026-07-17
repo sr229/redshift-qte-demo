@@ -116,7 +116,8 @@ export default function MultiplayerGameplay({ lobby, onLeave }: MultiplayerGamep
       })),
   )
 
-  const [timeLeftMs, setTimeLeftMs] = useState(30000)
+  const [timeLeftMs, setTimeLeftMs] = useState(lobby.variant === 'elimination' ? 15000 : 30000)
+  const [limitSeconds, setLimitSeconds] = useState(15)
 
   // Simulate opponent progress
   useEffect(() => {
@@ -147,31 +148,53 @@ export default function MultiplayerGameplay({ lobby, onLeave }: MultiplayerGamep
   useEffect(() => {
     const start = Date.now()
     const interval = setInterval(() => {
-      const remaining = Math.max(0, 30000 - (Date.now() - start))
-      setTimeLeftMs(remaining)
-      if (remaining <= 0) clearInterval(interval)
+      const now = Date.now()
+      const elapsed = now - start
+      
+      if (lobby.variant === 'elimination') {
+        const remaining = Math.max(0, (limitSeconds * 1000) - (elapsed % (limitSeconds * 1000)))
+        setTimeLeftMs(remaining)
+      } else {
+        const remaining = Math.max(0, 30000 - elapsed)
+        setTimeLeftMs(remaining)
+        if (remaining <= 0) clearInterval(interval)
+      }
     }, 100)
     return () => clearInterval(interval)
-  }, [])
+  }, [limitSeconds, lobby.variant])
 
   const handleInput = useCallback((direction: QteDirection) => {
     setLocalParticipant((prev) => {
       if (!prev.alive || !prev.sequence) return prev
       const steps = prev.sequence.steps
       const expected = steps[prev.progress]
-      if (direction !== expected) return { ...prev, progress: 0 }
+      
+      if (direction !== expected) {
+        if (lobby.variant === 'elimination') return { ...prev, progress: 0 }
+        return { ...prev, progress: 0 }
+      }
+      
       const nextProgress = prev.progress + 1
       if (nextProgress >= steps.length) {
+        const newScore = prev.score + 500
+        
+        if (lobby.variant === 'elimination') {
+          const isHarder = newScore > 0 && (newScore / 500) % 25 === 0
+          const nextLimitSeconds = isHarder ? Math.max(5, limitSeconds - 1) : limitSeconds
+          setLimitSeconds(nextLimitSeconds)
+          setTimeLeftMs(nextLimitSeconds * 1000)
+        }
+        
         return {
           ...prev,
-          score: prev.score + 500,
+          score: newScore,
           progress: 0,
           sequence: generateSequence(5),
         }
       }
       return { ...prev, progress: nextProgress }
     })
-  }, [])
+  }, [lobby.variant, limitSeconds])
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {

@@ -49,9 +49,9 @@ export function useSingleplayerState(): UseSingleplayerState {
         score: 0,
         sequence: generateSequence(SEQUENCE_LENGTH),
         progress: 0,
-        timeLeftMs: limitSeconds * 1000,
+        timeLeftMs: (mode === 'endless' ? 15 : limitSeconds) * 1000,
         prestartTimeLeftMs: PRESTART_DURATION_MS,
-        limitSeconds,
+        limitSeconds: mode === 'endless' ? 15 : limitSeconds,
         failed: false,
       })
 
@@ -111,21 +111,26 @@ export function useSingleplayerState(): UseSingleplayerState {
         if (prev.phase !== 'playing' || !prev.sequence) return prev
         const expected = prev.sequence.steps[prev.progress]
         if (direction !== expected) {
-          // Timer mode: wrong input just resets progress.
+          if (prev.mode === 'endless') {
+            return { ...prev, progress: 0 }
+          }
           return { ...prev, failed: true, progress: 0 }
         }
         const nextProgress = prev.progress + 1
         if (nextProgress >= prev.sequence.steps.length) {
           const newScore = prev.score + 1
-          const nextLimitSeconds = Math.max(5, prev.limitSeconds - 1)
-          const nextTimeMs = nextLimitSeconds * 1000
+          // Endless mode: ramps up difficulty every 25th score.
+          const isHarder = newScore > 0 && newScore % 25 === 0
+          const nextLimitSeconds = isHarder ? Math.max(5, prev.limitSeconds - 1) : prev.limitSeconds
+          
           return {
             ...prev,
             score: newScore,
             sequence: generateSequence(SEQUENCE_LENGTH),
             progress: 0,
             failed: false,
-            timeLeftMs: prev.mode === 'endless' ? nextTimeMs : prev.timeLeftMs,
+            // Endless mode: reset timer to current limit, difficulty ramps up periodically.
+            timeLeftMs: prev.mode === 'endless' ? nextLimitSeconds * 1000 : prev.timeLeftMs,
             limitSeconds: prev.mode === 'endless' ? nextLimitSeconds : prev.limitSeconds,
           }
         }

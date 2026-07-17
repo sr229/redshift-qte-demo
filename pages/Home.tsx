@@ -177,13 +177,15 @@ export default function Home() {
                 onChange={(v) => setMode(v as GameMode)}
               />
             </div>
-            <div className="mx-auto mb-6 max-w-xl">
-              <PixelSegmented
-                value={lobbyWindowSeconds}
-                options={WINDOW_OPTIONS}
-                onChange={setLobbyWindowSeconds}
-              />
-            </div>
+            {mode !== 'endless' && (
+              <div className="mx-auto mb-6 max-w-xl">
+                <PixelSegmented
+                  value={lobbyWindowSeconds}
+                  options={WINDOW_OPTIONS}
+                  onChange={setLobbyWindowSeconds}
+                />
+              </div>
+            )}
 
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
               {slots.map((participant, i) => {
@@ -302,11 +304,13 @@ export default function Home() {
             options={MODE_OPTIONS}
             onChange={(v) => setMode(v as GameMode)}
           />
-          <PixelSegmented
-            value={lobbyWindowSeconds}
-            options={WINDOW_OPTIONS}
-            onChange={setLobbyWindowSeconds}
-          />
+          {mode !== 'endless' && (
+            <PixelSegmented
+              value={lobbyWindowSeconds}
+              options={WINDOW_OPTIONS}
+              onChange={setLobbyWindowSeconds}
+            />
+          )}
           {menuTab === 'solo' ? (
             <PixelButton
               id="btn-start"
