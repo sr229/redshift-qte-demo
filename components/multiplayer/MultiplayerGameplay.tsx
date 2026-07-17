@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { PixelAvatar } from '@pxlkit/ui-kit'
 import { PxlKitIcon } from '@pxlkit/core'
 import { Clock, SparkleSmall, Home as HomeIcon } from '@pxlkit/ui'
+import type { ReactElement } from 'react'
 import type { Lobby, MultiplayerParticipant, QteDirection } from '../../lib/types'
 import { keyToDirection, generateSequence } from '../../lib/qte'
 
@@ -12,7 +13,7 @@ interface MultiplayerGameplayProps {
 
 import { PixelArrowUp, PixelArrowDown, PixelArrowLeft, PixelArrowRight } from '../PixelArrows';
 
-const ARROW: Record<QteDirection, JSX.Element> = {
+const ARROW: Record<QteDirection, ReactElement> = {
   up: <PixelArrowUp />,
   down: <PixelArrowDown />,
   left: <PixelArrowLeft />,

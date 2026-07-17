@@ -1,10 +1,11 @@
 import { PxlKitIcon } from '@pxlkit/core'
 import { Clock, SparkleSmall } from '@pxlkit/ui'
+import type { ReactElement } from 'react'
 import type { QteDirection, SingleplayerState } from '../lib/types'
 
 import { PixelArrowUp, PixelArrowDown, PixelArrowLeft, PixelArrowRight } from './PixelArrows';
 
-const ARROW: Record<QteDirection, JSX.Element> = {
+const ARROW: Record<QteDirection, ReactElement> = {
   up: <PixelArrowUp />,
   down: <PixelArrowDown />,
   left: <PixelArrowLeft />,
