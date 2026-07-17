@@ -51,9 +51,12 @@ export function useMultiplayerState(): UseMultiplayerState {
 
   const createLobby = useCallback(
     async (variant: MultiplayerVariant, name: string) => {
-      if (!isMultiplayerEnabled || !supabase) return
       const code = Math.random().toString(36).slice(2, 7).toUpperCase()
       const newLobby = emptyLobby(code, name, variant)
+      if (!isMultiplayerEnabled || !supabase) {
+        setLobby(newLobby)
+        return
+      }
       const channel = supabase.channel(`lobby:${code}`)
       channelRef.current = channel
       channel.on('presence', { event: 'sync' }, () => {
@@ -71,8 +74,21 @@ export function useMultiplayerState(): UseMultiplayerState {
 
   const joinLobby = useCallback(
     async (code: string, name: string) => {
-      if (!isMultiplayerEnabled || !supabase) return
       const normalized = code.toUpperCase()
+      if (!isMultiplayerEnabled || !supabase) {
+        const participant: MultiplayerParticipant = {
+          id: `guest_${normalized}_${name}`,
+          name,
+          score: 0,
+          alive: true,
+          sequence: generateSequence(4),
+          progress: 0,
+        }
+        const newLobby = emptyLobby(normalized, name, 'score')
+        newLobby.participants = [participant]
+        setLobby(newLobby)
+        return
+      }
       const channel = supabase.channel(`lobby:${normalized}`)
       channelRef.current = channel
       const participant: MultiplayerParticipant = {
@@ -110,8 +126,12 @@ export function useMultiplayerState(): UseMultiplayerState {
 
   useEffect(() => teardown, [teardown])
 
+  // Default mockup mode to true for local testing without Supabase, as requested.
+  // Can be controlled via VITE_MOCK_MODE environment variable.
+  const isMockMode = import.meta.env.VITE_MOCK_MODE !== 'false'
+
   return {
-    enabled: isMultiplayerEnabled,
+    enabled: isMockMode || isMultiplayerEnabled,
     lobby,
     createLobby,
     joinLobby,

@@ -186,7 +186,7 @@ export default function Home() {
                     setScreen('menu')
                   }}
                 >
-                  Leave Lobby
+                  Back to Solo Mode
                 </PixelButton>
               </div>
             </section>
@@ -199,6 +199,7 @@ export default function Home() {
         enabled={multi.enabled}
         onCreate={(v, name) => void multi.createLobby(v, name)}
         onJoin={(code, name) => void multi.joinLobby(code, name)}
+        onBack={() => setScreen('menu')}
       />
     )
   }

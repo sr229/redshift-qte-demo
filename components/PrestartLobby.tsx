@@ -2,10 +2,14 @@ import { useState } from 'react'
 import { PixelCard, PixelInput, PixelSelect, PixelButton, PixelAlert } from '@pxlkit/ui-kit'
 import type { MultiplayerVariant } from '../lib/types'
 
+import { Home as HomeIcon } from '@pxlkit/ui'
+import { PxlKitIcon } from '@pxlkit/core'
+
 interface PrestartLobbyProps {
   enabled: boolean
   onCreate: (variant: MultiplayerVariant, name: string) => void
   onJoin: (code: string, name: string) => void
+  onBack: () => void
 }
 
 const VARIANT_OPTIONS = [
@@ -32,20 +36,30 @@ const VARIANT_HINT: Record<MultiplayerVariant, string> = {
   reaction: 'Reaction mode favors fast, precise inputs.',
 }
 
-export default function PrestartLobby({ enabled, onCreate, onJoin }: PrestartLobbyProps) {
+export default function PrestartLobby({ enabled, onCreate, onJoin, onBack }: PrestartLobbyProps) {
   const [name, setName] = useState('')
   const [code, setCode] = useState('')
   const [variant, setVariant] = useState<MultiplayerVariant>('score')
 
   if (!enabled) {
     return (
-      <PixelCard tone="red" className="max-w-md">
-        <PixelAlert
-          tone="red"
-          label="Multiplayer unavailable"
-          message="Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY to enable it."
-        />
-      </PixelCard>
+      <div className="flex flex-col items-center gap-4">
+        <PixelCard tone="red" className="max-w-md">
+          <PixelAlert
+            tone="red"
+            label="Multiplayer unavailable"
+            message="Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY to enable it."
+          />
+        </PixelCard>
+        <PixelButton
+          tone="neutral"
+          variant="ghost"
+          iconLeft={<PxlKitIcon icon={HomeIcon} size={16} />}
+          onClick={onBack}
+        >
+          Back to Solo Mode
+        </PixelButton>
+      </div>
     )
   }
 
@@ -112,6 +126,17 @@ export default function PrestartLobby({ enabled, onCreate, onJoin }: PrestartLob
               onClick={() => onJoin(code, name)}
             >
               Join
+            </PixelButton>
+          </div>
+
+          <div className="mt-2 w-full max-w-md flex justify-center">
+            <PixelButton
+              tone="neutral"
+              variant="ghost"
+              iconLeft={<PxlKitIcon icon={HomeIcon} size={16} />}
+              onClick={onBack}
+            >
+              Back to Solo Mode
             </PixelButton>
           </div>
         </div>
