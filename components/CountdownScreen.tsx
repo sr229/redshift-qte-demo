@@ -39,6 +39,12 @@ function getModeInfo(mode: GameMode | MultiplayerVariant, timerSeconds?: number)
         variant: 'TIMER',
         hint: 'Reaction mode favors fast, precise inputs.',
       }
+    case 'elimination':
+      return {
+        difficulty: 'HARD',
+        variant: 'ELIMINATION',
+        hint: 'Last player standing wins — don\'t miss a code!',
+      }
   }
 }
 
