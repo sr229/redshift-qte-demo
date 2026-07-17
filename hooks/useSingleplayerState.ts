@@ -1,29 +1,27 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { GameMode, QteDirection, SingleplayerState } from '../lib/types'
-import { endlessTimeLimit, generateSequence, keyToDirection } from '../lib/qte'
+import { generateSequence, keyToDirection } from '../lib/qte'
 
-const TIMER_MODE_DURATION_MS = 30_000
-const TIMER_MODE_SEQUENCE_LIMIT_MS = 5000
 const PRESTART_DURATION_MS = 9_000
 const SEQUENCE_LENGTH = 4
 
-function createInitialState(mode: GameMode): SingleplayerState {
+function createInitialState(mode: GameMode, limitSeconds: number = 5): SingleplayerState {
   return {
     phase: 'idle',
     mode,
     score: 0,
     sequence: null,
     progress: 0,
-    gameTimeLeftMs: TIMER_MODE_DURATION_MS,
-    sequenceTimeLeftMs: mode === 'timer' ? TIMER_MODE_SEQUENCE_LIMIT_MS : endlessTimeLimit(0),
+    timeLeftMs: limitSeconds * 1000,
     prestartTimeLeftMs: PRESTART_DURATION_MS,
+    limitSeconds,
     failed: false,
   }
 }
 
 export interface UseSingleplayerState {
   state: SingleplayerState
-  start: (mode: GameMode) => void
+  start: (mode: GameMode, limitSeconds: number) => void
   reset: () => void
 }
 
@@ -43,7 +41,7 @@ export function useSingleplayerState(): UseSingleplayerState {
   }, [])
 
   const start = useCallback(
-    (mode: GameMode) => {
+    (mode: GameMode, limitSeconds: number) => {
       clearTimer()
       setState({
         phase: 'prestart',
@@ -51,9 +49,9 @@ export function useSingleplayerState(): UseSingleplayerState {
         score: 0,
         sequence: generateSequence(SEQUENCE_LENGTH),
         progress: 0,
-        gameTimeLeftMs: TIMER_MODE_DURATION_MS,
-        sequenceTimeLeftMs: endlessTimeLimit(0),
+        timeLeftMs: limitSeconds * 1000,
         prestartTimeLeftMs: PRESTART_DURATION_MS,
+        limitSeconds,
         failed: false,
       })
 
@@ -80,37 +78,18 @@ export function useSingleplayerState(): UseSingleplayerState {
           }
 
           if (prev.phase === 'playing') {
-            if (prev.mode === 'timer') {
-              const nextGameTime = Math.max(0, prev.gameTimeLeftMs - delta)
-              if (nextGameTime <= 0) {
-                clearTimer()
-                return {
-                  ...prev,
-                  phase: 'gameover',
-                  sequence: null,
-                  gameTimeLeftMs: 0,
-                }
-              }
+            if (prev.timeLeftMs <= 0) {
+              clearTimer()
               return {
                 ...prev,
-                gameTimeLeftMs: nextGameTime,
+                phase: 'gameover',
+                sequence: null,
+                timeLeftMs: 0,
               }
-            } else {
-              // Endless mode uses sequence timer
-              const nextSeqTime = Math.max(0, prev.sequenceTimeLeftMs - delta)
-              if (nextSeqTime <= 0) {
-                clearTimer()
-                return {
-                  ...prev,
-                  phase: 'gameover',
-                  sequence: null,
-                  sequenceTimeLeftMs: 0,
-                }
-              }
-              return {
-                ...prev,
-                sequenceTimeLeftMs: nextSeqTime,
-              }
+            }
+            return {
+              ...prev,
+              timeLeftMs: Math.max(0, prev.timeLeftMs - delta),
             }
           }
 
@@ -132,37 +111,28 @@ export function useSingleplayerState(): UseSingleplayerState {
         if (prev.phase !== 'playing' || !prev.sequence) return prev
         const expected = prev.sequence.steps[prev.progress]
         if (direction !== expected) {
-          if (prev.mode === 'endless') {
-            clearTimer()
-            return {
-              ...prev,
-              phase: 'gameover',
-              failed: true,
-              sequence: null,
-              sequenceTimeLeftMs: 0,
-            }
-          }
-          // Timer mode: a wrong input just resets the current sequence progress.
+          // Timer mode: wrong input just resets progress.
           return { ...prev, failed: true, progress: 0 }
         }
         const nextProgress = prev.progress + 1
         if (nextProgress >= prev.sequence.steps.length) {
           const newScore = prev.score + 1
-          // Generate next sequence
-          const nextLimit = prev.mode === 'endless' ? endlessTimeLimit(newScore) : prev.sequenceTimeLeftMs
+          const nextLimitSeconds = Math.max(5, prev.limitSeconds - 1)
+          const nextTimeMs = nextLimitSeconds * 1000
           return {
             ...prev,
             score: newScore,
             sequence: generateSequence(SEQUENCE_LENGTH),
             progress: 0,
             failed: false,
-            sequenceTimeLeftMs: nextLimit,
+            timeLeftMs: prev.mode === 'endless' ? nextTimeMs : prev.timeLeftMs,
+            limitSeconds: prev.mode === 'endless' ? nextLimitSeconds : prev.limitSeconds,
           }
         }
         return { ...prev, progress: nextProgress, failed: false }
       })
     },
-    [clearTimer],
+    [],
   )
 
   useEffect(() => {

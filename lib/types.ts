@@ -18,12 +18,12 @@ export interface SingleplayerState {
   sequence: QteSequence | null
   /** Index of the next step the player must input. */
   progress: number
-  /** Remaining time in milliseconds for the global match (Timer Mode: starts at 30s). */
-  gameTimeLeftMs: number
-  /** Remaining time in milliseconds for the current sequence. */
-  sequenceTimeLeftMs: number
+  /** Remaining time in milliseconds for the active phase. */
+  timeLeftMs: number
   /** Remaining time in milliseconds for the prestart countdown (starts at 9s). */
   prestartTimeLeftMs: number
+  /** The selected initial duration in seconds (5, 10, or 15). */
+  limitSeconds: number
   /** Whether the most recent input was wrong. */
   failed: boolean
 }

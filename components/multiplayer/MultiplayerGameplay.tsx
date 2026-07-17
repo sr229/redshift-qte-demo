@@ -186,7 +186,7 @@ export default function MultiplayerGameplay({ lobby, onLeave }: MultiplayerGamep
   const activeSequence = localParticipant.sequence?.steps ?? DEFAULT_STEPS
   const playersRemaining = list.filter((p) => p.alive).length
 
-  const seqPct = Math.max(0, Math.min(100, ((localParticipant.progress) / 5) * 100))
+  const pct = Math.max(0, Math.min(100, (timeLeftMs / 30000) * 100))
 
   const formatTime = (ms: number) => {
     const totalSecs = ms / 1000
@@ -249,7 +249,7 @@ export default function MultiplayerGameplay({ lobby, onLeave }: MultiplayerGamep
               <div className="h-2 w-full overflow-hidden rounded-full border border-retro-border/40 bg-retro-bg/60">
                 <div
                   className="h-full rounded-full bg-retro-text transition-all duration-75"
-                  style={{ width: `${seqPct}%` }}
+                  style={{ width: `${pct}%` }}
                 />
               </div>
             </div>

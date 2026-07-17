@@ -1,7 +1,6 @@
 import { PxlKitIcon } from '@pxlkit/core'
 import { Clock, SparkleSmall } from '@pxlkit/ui'
 import type { QteDirection, SingleplayerState } from '../lib/types'
-import { endlessTimeLimit } from '../lib/qte'
 
 const ARROW: Record<QteDirection, string> = {
   up: '↑',
@@ -15,10 +14,10 @@ interface GameplayWindowProps {
 }
 
 export default function GameplayWindow({ state }: GameplayWindowProps) {
-  const { sequence, progress, gameTimeLeftMs, sequenceTimeLeftMs, mode, score } = state
+  const { sequence, progress, mode, score, limitSeconds, timeLeftMs } = state
 
-  const seqLimit = mode === 'timer' ? 5000 : endlessTimeLimit(score)
-  const seqPct = Math.max(0, Math.min(100, (sequenceTimeLeftMs / seqLimit) * 100))
+  const pct =
+    Math.max(0, Math.min(100, (timeLeftMs / (limitSeconds * 1000)) * 100))
 
   const formatTime = (ms: number) => {
     const totalSecs = ms / 1000
@@ -62,7 +61,7 @@ export default function GameplayWindow({ state }: GameplayWindowProps) {
             <div className="h-2 w-full overflow-hidden rounded-full border border-retro-border/40 bg-retro-bg/60">
               <div
                 className="h-full rounded-full bg-retro-text transition-all duration-75"
-                style={{ width: `${seqPct}%` }}
+                style={{ width: `${pct}%` }}
               />
             </div>
           </div>
@@ -78,8 +77,8 @@ export default function GameplayWindow({ state }: GameplayWindowProps) {
       <div className="flex items-center gap-2 rounded-full border-2 border-retro-border bg-retro-surface px-5 py-2 font-pixel text-sm text-retro-text">
         <PxlKitIcon icon={Clock} size={14} />
         {mode === 'timer'
-          ? formatTime(gameTimeLeftMs)
-          : formatTime(sequenceTimeLeftMs)}
+          ? formatTime(timeLeftMs)
+          : formatTime(timeLeftMs)}
       </div>
     </div>
   )

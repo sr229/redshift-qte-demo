@@ -66,7 +66,7 @@ export default function Home() {
       return (
         <GameOverScreen
           state={single.state}
-          onRestart={() => single.start(mode)}
+          onRestart={() => single.start(mode, Number(lobbyWindowSeconds))}
           onHome={() => setScreen('menu')}
         />
       )
@@ -312,7 +312,7 @@ export default function Home() {
               className="w-full"
               onClick={() => {
                 setScreen('single')
-                single.start(mode)
+                single.start(mode, Number(lobbyWindowSeconds))
               }}
             >
               START
