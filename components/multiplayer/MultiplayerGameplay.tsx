@@ -1,7 +1,9 @@
+import { useState, useEffect, useCallback } from 'react'
 import { PixelAvatar, PixelBadge, PixelCard } from '@pxlkit/ui-kit'
 import { PxlKitIcon } from '@pxlkit/core'
 import { Clock, SparkleSmall } from '@pxlkit/ui'
 import type { Lobby, MultiplayerParticipant, QteDirection } from '../../lib/types'
+import { keyToDirection, generateSequence } from '../../lib/qte'
 
 interface MultiplayerGameplayProps {
   lobby: Lobby
@@ -45,7 +47,7 @@ function ParticipantRow({ participant }: { participant: MultiplayerParticipant }
           {participant.alive ? participant.progress + 344 : 'DEAD'}
         </PixelBadge>
         <PixelBadge tone="neutral" className="border border-black text-black">
-          {Math.max(12_500, participant.score)}
+          {participant.score}
         </PixelBadge>
       </div>
       <div className="flex gap-1">
@@ -68,22 +70,136 @@ function ParticipantRow({ participant }: { participant: MultiplayerParticipant }
 }
 
 export default function MultiplayerGameplay({ lobby, onLeave }: MultiplayerGameplayProps) {
-  const list = fillParticipants(lobby.participants)
-  const local = list[0]
-  const activeSequence = local?.sequence?.steps ?? DEFAULT_STEPS
+  const [localParticipant, setLocalParticipant] = useState<MultiplayerParticipant>(() => {
+    const orig = lobby.participants[0] || {
+      id: 'local-mock',
+      name: 'Nice Nature',
+      score: 0,
+      alive: true,
+      sequence: { id: 'initial', steps: DEFAULT_STEPS },
+      progress: 0,
+    }
+    return {
+      ...orig,
+      sequence: orig.sequence || { id: 'initial', steps: DEFAULT_STEPS },
+    }
+  })
+
+  const [opponents, setOpponents] = useState<MultiplayerParticipant[]>(() => {
+    return fillParticipants(lobby.participants).slice(1).map((p, idx) => ({
+      ...p,
+      score: 12500 + idx * 100,
+      progress: Math.floor(Math.random() * 3),
+      sequence: p.sequence || { id: `opp-${idx}`, steps: DEFAULT_STEPS },
+    }))
+  })
+
+  const [timeLeftMs, setTimeLeftMs] = useState(30000)
+
+  // Simulation timer for opponents progress/scores
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setOpponents((prev) =>
+        prev.map((opp) => {
+          if (!opp.alive) return opp
+          const advances = Math.random() > 0.6
+          if (advances) {
+            const nextProgress = opp.progress + 1
+            if (nextProgress >= (opp.sequence?.steps.length ?? 5)) {
+              return {
+                ...opp,
+                progress: 0,
+                score: opp.score + Math.floor(Math.random() * 200) + 100,
+                sequence: { id: `seq-${Date.now()}-${opp.id}`, steps: generateSequence(5).steps },
+              }
+            } else {
+              return { ...opp, progress: nextProgress }
+            }
+          }
+          return opp
+        }),
+      )
+    }, 1500)
+    return () => clearInterval(interval)
+  }, [])
+
+  // Timer countdown
+  useEffect(() => {
+    const start = Date.now()
+    const initialTime = 30000
+    const interval = setInterval(() => {
+      const elapsed = Date.now() - start
+      const remaining = Math.max(0, initialTime - elapsed)
+      setTimeLeftMs(remaining)
+      if (remaining <= 0) {
+        clearInterval(interval)
+      }
+    }, 100)
+    return () => clearInterval(interval)
+  }, [])
+
+  const handleInput = useCallback((direction: QteDirection) => {
+    setLocalParticipant((prev) => {
+      if (!prev.alive || !prev.sequence) return prev
+      const steps = prev.sequence.steps
+      const expected = steps[prev.progress]
+      if (direction !== expected) {
+        // Reset progress on wrong input
+        return { ...prev, progress: 0 }
+      }
+      const nextProgress = prev.progress + 1
+      if (nextProgress >= steps.length) {
+        return {
+          ...prev,
+          score: prev.score + 500,
+          progress: 0,
+          sequence: generateSequence(5),
+        }
+      }
+      return { ...prev, progress: nextProgress }
+    })
+  }, [])
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const direction = keyToDirection(e.key)
+      if (direction) {
+        handleInput(direction)
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [handleInput])
+
+  const list = [localParticipant, ...opponents]
+  const activeSequence = localParticipant.sequence?.steps ?? DEFAULT_STEPS
   const playersRemaining = list.filter((p) => p.alive).length
+
+  const formatTime = (ms: number) => {
+    const totalSecs = ms / 1000
+    const mins = Math.floor(totalSecs / 60)
+    const secs = (totalSecs % 60).toFixed(1)
+    return `${mins.toString().padStart(2, '0')}:${secs.padStart(4, '0')}`
+  }
 
   return (
     <main className="min-h-[72vh] w-full bg-[#eee]">
       <div className="grid min-h-[72vh] grid-cols-1 md:grid-cols-[340px_1fr]">
-        <aside className="border-r-2 border-black bg-[#d9d9d9] p-4">
-          <div className="max-h-[70vh] space-y-3 overflow-auto pr-1">
+        <aside className="border-r-2 border-black bg-[#d9d9d9] p-4 flex flex-col justify-between h-full min-h-[72vh]">
+          <div className="max-h-[50vh] space-y-3 overflow-auto pr-1 flex-1">
             {list.map((participant) => (
               <ParticipantRow key={participant.id} participant={participant} />
             ))}
           </div>
-          <div className="mt-4 rounded-md bg-[#747272] p-3 text-center text-sm text-white">
-            Live Multiplayer Feed
+          <div className="mt-4 rounded-md bg-[#747272] p-3 flex flex-col gap-2 text-center text-sm text-white">
+            <span className="font-bold">Live Multiplayer Feed</span>
+            <button
+              type="button"
+              onClick={onLeave}
+              className="mt-1 w-full rounded border border-white bg-transparent px-3 py-1.5 text-xs font-semibold text-white hover:bg-white hover:text-[#747272] transition"
+            >
+              Leave Session
+            </button>
           </div>
         </aside>
 
@@ -100,7 +216,7 @@ export default function MultiplayerGameplay({ lobby, onLeave }: MultiplayerGamep
                     key={`active-${i}`}
                     className={[
                       'flex h-12 w-12 items-center justify-center border-2 text-2xl',
-                      i === (local?.progress ?? 0)
+                      i === (localParticipant?.progress ?? 0)
                         ? 'border-black bg-white text-black'
                         : 'border-black/20 bg-[#ececec] text-black/40',
                     ].join(' ')}
@@ -118,9 +234,9 @@ export default function MultiplayerGameplay({ lobby, onLeave }: MultiplayerGamep
             </div>
           </PixelCard>
 
-          <div className="flex items-center gap-2 rounded-full border-2 border-black bg-[#d9d9d9] px-5 py-1 text-lg text-black">
+          <div className="flex items-center gap-2 rounded-full border-2 border-black bg-[#d9d9d9] px-5 py-1 text-lg text-black font-mono">
             <PxlKitIcon icon={Clock} size={16} />
-            00:03.1
+            {formatTime(timeLeftMs)}
           </div>
 
           <button
@@ -128,7 +244,7 @@ export default function MultiplayerGameplay({ lobby, onLeave }: MultiplayerGamep
             onClick={onLeave}
             className="rounded-full border-2 border-black bg-[#d9d9d9] px-5 py-1 text-sm text-black hover:bg-[#e4e4e4]"
           >
-            Leave Lobby
+            Back to Solo Mode
           </button>
 
           <div className="flex items-center gap-2 text-sm text-black/70">
