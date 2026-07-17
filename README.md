@@ -1,0 +1,44 @@
+## The Redshift QTE Demo (browser edition)
+
+This is an implementation of the upcoming gate start mechanic for [Redshift](https://github.com/urs-vrc/observatory), which allows a more skill-based implementation of a start mechanic for the Umamusume-inspired racing game. 
+
+The goal of this demo is to experiment and showcase the core gameplay loop of the QTE mechanic, and to provide a reference implementation for the eventual final version in the VRChat version. To make the demo more engaging, it is presented as a browser-based game, which you can play with any modern web browser.
+
+## Developing
+
+This demo uses Vite, React, and TypeScript, with Supabase as the backend for the multiplayer mode. To run the demo locally, you will need to have Node.js and npm installed on your machine. You can then clone the repository and run the following commands:
+
+```bash
+npm install
+npm run dev
+```
+
+Make sure to set the `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` environment variables in a `.env` file in the root of the project, which you can get from your Supabase project settings.
+
+### Performing Migrations on Supabase
+
+As we will need the tables setup for the multiplayer mode, you will need to perform migrations on your Supabase project. You can do this by running the following command:
+
+```bash
+npx supabase db push
+```
+
+## What does this demo include?
+
+This demo includes a reference implementation of the QTE mechanic, inspired from the "strategem" mechanic in [Helldivers 2](https://www.helldivers.com/). The demo includes a simple interface that showcases the main screen of the game, where the player can interact with the QTE mechanic by pressing the correct keys in the sequence at the right time. 
+
+The game includes two modes:
+
+- **Timer Mode**: This is the implementation that will ship with the VRChat version of Redshift. In this mode, the player has a limited amount of time to complete the QTE sequence, and the game will end if the player fails to complete the sequence in time. You are given an infinite amount of sequences and attempts until the timer runs out and your final score is calculated based on the correct amount of sequences you completed under the time limit.
+
+- **Endless Mode**: This mode is a more "endurance" mode, where it retains the same gameplay loop as the timer mode, but you will fail if you don't enter the correct sequence in time. The game also progressively gets harder as the time limit for each sequence gets shorter. This is the only browser-exclusive mode, and will not be present in the VRChat version of Redshift.
+
+### Multiplayer Mode
+
+The QTE also includes a multiplayer mode, which allows players to compete against each other with the same modes as the singleplayer version. This is implemented as a "lobby" system, where players can create or join a lobby and compete against each other in real-time. The only alterations for the modes on the multiplayer version is:
+
+- Endless Mode is an "elimination" mode, where players will be eliminated if they fail to complete the sequence in time. The last player standing wins the game.
+
+- Timer Mode is a "score" mode, where players will compete to see who can complete the most sequences in the time limit. The player with the highest score at the end of the timer wins the game. In the "reaction" mode, you win by whoever completes the sequence first.
+
+I might include a leaderboard system in the future but that depends if people will play this beyond the scope of a demo for a larger project. Some parts of the multiplayer mode are exclusive to the browser version.
