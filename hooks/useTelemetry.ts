@@ -1,5 +1,6 @@
-import { useCallback, useRef, useState } from 'react'
-import { TelemetryTracker, createEmptyTelemetry } from '../lib/telemetry'
+import { useCallback, useEffect, useState } from 'react'
+import { telemetryClient } from '../lib/telemetryClient'
+import { createEmptyTelemetry } from '../lib/telemetry'
 import type { Telemetry } from '../lib/telemetry'
 
 export interface UseTelemetry {
@@ -25,61 +26,52 @@ export interface UseTelemetry {
 
 /**
  * Shared telemetry hook used by both singleplayer and multiplayer game loops.
- * Wraps the framework-agnostic {@link TelemetryTracker} and re-renders on each
- * update so consumers can display live stats.
+ *
+ * Telemetry tracking now runs in a dedicated Web Worker (see
+ * {@link telemetryClient}); this hook only forwards commands to the worker and
+ * re-renders when a throttled snapshot arrives. Because the worker owns the
+ * compute and pushes snapshots at a fixed cadence, the gameplay render loop is
+ * never blocked by telemetry bookkeeping.
  */
 export function useTelemetry(): UseTelemetry {
-  const trackerRef = useRef<TelemetryTracker | null>(null)
-  if (!trackerRef.current) {
-    trackerRef.current = new TelemetryTracker()
-  }
-
   const [telemetry, setTelemetry] = useState<Telemetry>(createEmptyTelemetry())
 
-  const sync = useCallback(() => {
-    setTelemetry(trackerRef.current!.getSnapshot())
+  // Subscribe to worker snapshots for the lifetime of the hook.
+  useEffect(() => {
+    return telemetryClient.subscribe(setTelemetry)
   }, [])
 
   const start = useCallback(() => {
-    trackerRef.current!.start()
-    sync()
-  }, [sync])
+    telemetryClient.start()
+  }, [])
 
   const stop = useCallback(() => {
-    trackerRef.current!.stop()
-    sync()
-  }, [sync])
+    telemetryClient.stop()
+  }, [])
 
   const tick = useCallback(() => {
-    trackerRef.current!.tick()
-    sync()
-  }, [sync])
+    telemetryClient.tick()
+  }, [])
 
-  const recordInput = useCallback(
-    (correct: boolean) => {
-      trackerRef.current!.recordInput(correct)
-      sync()
-    },
-    [sync],
-  )
+  const recordInput = useCallback((correct: boolean) => {
+    telemetryClient.recordInput(correct)
+  }, [])
 
   const recordSequenceComplete = useCallback(() => {
-    trackerRef.current!.recordSequenceComplete()
-    sync()
-  }, [sync])
+    telemetryClient.recordSequenceComplete()
+  }, [])
 
   const setScore = useCallback((score: number) => {
-    trackerRef.current!.setScore(score)
+    telemetryClient.setScore(score)
   }, [])
 
   const setSequenceLength = useCallback((length: number) => {
-    trackerRef.current!.setSequenceLength(length)
+    telemetryClient.setSequenceLength(length)
   }, [])
 
   const reset = useCallback(() => {
-    trackerRef.current!.reset()
-    sync()
-  }, [sync])
+    telemetryClient.reset()
+  }, [])
 
   return {
     telemetry,
