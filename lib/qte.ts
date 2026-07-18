@@ -18,29 +18,36 @@ export function generateSequence(length: number): QteSequence {
 }
 
 /**
- * Compute the per-sequence time limit (ms) for endless mode.
- * Starts at 5000ms and shrinks by 250ms per completed sequence, with a 1500ms floor.
+ * Compute the per-sequence time limit (seconds) for endless mode.
+ * Starts at 15s and decays continuously as the score climbs, with a 3s floor.
  */
-export function endlessTimeLimit(completed: number): number {
-  return Math.max(1500, 5000 - completed * 250)
+export const ENDLESS_TIME_START_SECONDS = 15
+export const ENDLESS_TIME_FLOOR_SECONDS = 3
+export const ENDLESS_TIME_DECAY_PER_POINT = 0.2
+
+export function endlessTimeLimit(score: number): number {
+  return Math.max(
+    ENDLESS_TIME_FLOOR_SECONDS,
+    ENDLESS_TIME_START_SECONDS - score * ENDLESS_TIME_DECAY_PER_POINT,
+  )
 }
-
-/** Score at which endless mode steps up to longer, randomly switched combinations. */
-export const ENDLESS_HARD_THRESHOLD = 25
-
-/** Lengths used for the longer endless-mode combinations once the threshold is reached. */
-export const ENDLESS_LONG_LENGTHS = [4, 6, 8]
 
 /**
  * Determine the combination length for an endless-mode sequence given the current score.
- * Below the hard threshold, combinations stay at the base length. Once the player reaches
- * the threshold, the length randomly switches between 4, 6, and 8 to keep things varied
- * and harder.
+ * Length grows monotonically with score (base + floor(score / 10)), capped at a maximum,
+ * so the ramp always trends upward instead of randomly dipping back to short sequences.
  */
+export const ENDLESS_MAX_LENGTH = 10
+
 export function endlessSequenceLength(score: number, baseLength: number): number {
-  if (score < ENDLESS_HARD_THRESHOLD) return baseLength
-  return ENDLESS_LONG_LENGTHS[Math.floor(Math.random() * ENDLESS_LONG_LENGTHS.length)]
+  return Math.min(ENDLESS_MAX_LENGTH, baseLength + Math.floor(score / 10))
 }
+
+/**
+ * Time penalty (seconds) applied to the endless-mode clock on a wrong input. This punishes
+ * mistakes directly against the timer, the same resource the player is racing.
+ */
+export const ENDLESS_MISTAKE_PENALTY_SECONDS = 2
 
 /** Map a keyboard event to a QTE direction, or null if it isn't a directional key. */
 export function keyToDirection(key: string): QteDirection | null {

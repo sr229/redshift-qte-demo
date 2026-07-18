@@ -1,6 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { GameMode, QteDirection, SingleplayerState } from '../lib/types'
-import { endlessSequenceLength, generateSequence, keyToDirection } from '../lib/qte'
+import {
+  ENDLESS_MISTAKE_PENALTY_SECONDS,
+  endlessSequenceLength,
+  endlessTimeLimit,
+  generateSequence,
+  keyToDirection,
+} from '../lib/qte'
 import { useTelemetry } from './useTelemetry'
 
 const PRESTART_DURATION_MS = 9_000
@@ -133,7 +139,20 @@ export function useSingleplayerState(): UseSingleplayerState {
         telemetry.recordInput(correct)
         if (!correct) {
           if (prev.mode === 'endless') {
-            return { ...prev, progress: 0 }
+            // Punish the mistake directly against the clock the player is racing.
+            const penalized = Math.max(0, prev.timeLeftMs - ENDLESS_MISTAKE_PENALTY_SECONDS * 1000)
+            if (penalized <= 0) {
+              clearTimer()
+              telemetry.stop()
+              return {
+                ...prev,
+                phase: 'gameover',
+                sequence: null,
+                timeLeftMs: 0,
+                progress: 0,
+              }
+            }
+            return { ...prev, progress: 0, timeLeftMs: penalized }
           }
           return { ...prev, failed: true, progress: 0 }
         }
@@ -142,9 +161,9 @@ export function useSingleplayerState(): UseSingleplayerState {
           telemetry.recordSequenceComplete()
           const newScore = prev.score + 1
           telemetry.setScore(newScore)
-          // Endless mode: ramps up difficulty every 25th score.
-          const isHarder = newScore > 0 && newScore % 25 === 0
-          const nextLimitSeconds = isHarder ? Math.max(5, prev.limitSeconds - 1) : prev.limitSeconds
+          // Endless mode: difficulty ramps continuously with score.
+          const nextLimitSeconds =
+            prev.mode === 'endless' ? endlessTimeLimit(newScore) : prev.limitSeconds
           const nextLength =
             prev.mode === 'endless'
               ? endlessSequenceLength(newScore, SEQUENCE_LENGTH)
@@ -157,7 +176,6 @@ export function useSingleplayerState(): UseSingleplayerState {
             sequence: generateSequence(nextLength),
             progress: 0,
             failed: false,
-            // Endless mode: reset timer to current limit, difficulty ramps up periodically.
             timeLeftMs: prev.mode === 'endless' ? nextLimitSeconds * 1000 : prev.timeLeftMs,
             limitSeconds: prev.mode === 'endless' ? nextLimitSeconds : prev.limitSeconds,
           }

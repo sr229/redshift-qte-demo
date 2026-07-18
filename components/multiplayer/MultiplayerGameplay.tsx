@@ -1,10 +1,16 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { PixelAvatar } from '@pxlkit/ui-kit'
 import { PxlKitIcon } from '@pxlkit/core'
 import { Clock, SparkleSmall, Home as HomeIcon } from '@pxlkit/ui'
 import type { ReactElement } from 'react'
 import type { Lobby, MultiplayerParticipant, QteDirection } from '../../lib/types'
-import { keyToDirection, generateSequence } from '../../lib/qte'
+import {
+  keyToDirection,
+  generateSequence,
+  endlessSequenceLength,
+  endlessTimeLimit,
+  ENDLESS_MISTAKE_PENALTY_SECONDS,
+} from '../../lib/qte'
 import { useTelemetry } from '../../hooks/useTelemetry'
 import TelemetryStats from '../TelemetryStats'
 import TelemetryChart from '../TelemetryChart'
@@ -125,6 +131,15 @@ export default function MultiplayerGameplay({ lobby, onLeave }: MultiplayerGamep
   const [timeLeftMs, setTimeLeftMs] = useState(lobby.variant === 'elimination' ? 15000 : 30000)
   const [limitSeconds, setLimitSeconds] = useState(15)
 
+  // Refs backing the match clock so mistake penalties stick and the timer can read the
+  // latest limit without restarting the interval (which would reset telemetry).
+  const timeLeftRef = useRef(lobby.variant === 'elimination' ? 15000 : 30000)
+  const lastTickRef = useRef(0)
+  const limitSecondsRef = useRef(limitSeconds)
+  useEffect(() => {
+    limitSecondsRef.current = limitSeconds
+  }, [limitSeconds])
+
   const telemetry = useTelemetry()
 
   // Simulate opponent progress
@@ -152,32 +167,35 @@ export default function MultiplayerGameplay({ lobby, onLeave }: MultiplayerGamep
     return () => clearInterval(interval)
   }, [])
 
-  // Match timer
+  // Match timer — decrements the local player's clock so mistake penalties stick.
   useEffect(() => {
-    const start = Date.now()
+    timeLeftRef.current = lobby.variant === 'elimination' ? limitSecondsRef.current * 1000 : 30000
+    setTimeLeftMs(timeLeftRef.current)
+    lastTickRef.current = Date.now()
     telemetry.start()
     const interval = setInterval(() => {
       const now = Date.now()
-      const elapsed = now - start
+      const delta = now - lastTickRef.current
+      lastTickRef.current = now
       telemetry.tick()
-      
-      if (lobby.variant === 'elimination') {
-        const remaining = Math.max(0, (limitSeconds * 1000) - (elapsed % (limitSeconds * 1000)))
-        setTimeLeftMs(remaining)
-      } else {
-        const remaining = Math.max(0, 30000 - elapsed)
-        setTimeLeftMs(remaining)
-        if (remaining <= 0) {
+
+      timeLeftRef.current = Math.max(0, timeLeftRef.current - delta)
+      if (timeLeftRef.current <= 0) {
+        if (lobby.variant === 'elimination') {
+          // Survival clock cycles to the next (shorter) round.
+          timeLeftRef.current = limitSecondsRef.current * 1000
+        } else {
           telemetry.stop()
           clearInterval(interval)
         }
       }
+      setTimeLeftMs(timeLeftRef.current)
     }, 100)
     return () => {
       telemetry.stop()
       clearInterval(interval)
     }
-  }, [limitSeconds, lobby.variant, telemetry])
+  }, [lobby.variant, telemetry])
 
   const handleInput = useCallback((direction: QteDirection) => {
     setLocalParticipant((prev) => {
@@ -186,35 +204,40 @@ export default function MultiplayerGameplay({ lobby, onLeave }: MultiplayerGamep
       const expected = steps[prev.progress]
       const correct = direction === expected
       telemetry.recordInput(correct)
-      
+
       if (!correct) {
-        if (lobby.variant === 'elimination') return { ...prev, progress: 0 }
+        // Mistake penalty (#5): drain the local player's clock directly.
+        timeLeftRef.current = Math.max(0, timeLeftRef.current - ENDLESS_MISTAKE_PENALTY_SECONDS * 1000)
+        setTimeLeftMs(timeLeftRef.current)
         return { ...prev, progress: 0 }
       }
-      
+
       const nextProgress = prev.progress + 1
       if (nextProgress >= steps.length) {
         telemetry.recordSequenceComplete()
         const newScore = prev.score + 500
         telemetry.setScore(newScore)
-        
+        const completions = newScore / 500
+
+        // Difficulty ramp (#2 + #3): continuous timer decay and monotonic length growth.
+        const nextLength = endlessSequenceLength(completions, 5)
         if (lobby.variant === 'elimination') {
-          const isHarder = newScore > 0 && (newScore / 500) % 25 === 0
-          const nextLimitSeconds = isHarder ? Math.max(5, limitSeconds - 1) : limitSeconds
+          const nextLimitSeconds = endlessTimeLimit(completions)
           setLimitSeconds(nextLimitSeconds)
-          setTimeLeftMs(nextLimitSeconds * 1000)
+          timeLeftRef.current = nextLimitSeconds * 1000
+          setTimeLeftMs(timeLeftRef.current)
         }
-        
+
         return {
           ...prev,
           score: newScore,
           progress: 0,
-          sequence: generateSequence(5),
+          sequence: generateSequence(nextLength),
         }
       }
       return { ...prev, progress: nextProgress }
     })
-  }, [lobby.variant, limitSeconds, telemetry])
+  }, [lobby.variant, telemetry])
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -229,7 +252,8 @@ export default function MultiplayerGameplay({ lobby, onLeave }: MultiplayerGamep
   const activeSequence = localParticipant.sequence?.steps ?? DEFAULT_STEPS
   const playersRemaining = list.filter((p) => p.alive).length
 
-  const pct = Math.max(0, Math.min(100, (timeLeftMs / 30000) * 100))
+  const clockDenominator = lobby.variant === 'elimination' ? limitSeconds * 1000 : 30000
+  const pct = Math.max(0, Math.min(100, (timeLeftMs / clockDenominator) * 100))
 
   const formatTime = (ms: number) => {
     const totalSecs = ms / 1000
