@@ -7,8 +7,8 @@ interface TelemetryStatsProps {
   className?: string
 }
 
-function formatWpm(wpm: number): string {
-  return wpm > 0 ? wpm.toFixed(0) : '—'
+function formatKpm(kpm: number): string {
+  return kpm > 0 ? kpm.toFixed(0) : '—'
 }
 
 function formatAccuracy(accuracy: number): string {
@@ -21,9 +21,9 @@ function formatAccuracy(accuracy: number): string {
  */
 export default function TelemetryStats({ telemetry, title, className }: TelemetryStatsProps) {
   const stats: Array<{ label: string; value: string }> = [
-    { label: 'Avg WPM', value: formatWpm(telemetry.averageWpm) },
-    { label: 'High WPM', value: formatWpm(telemetry.highWpm) },
-    { label: 'Low WPM', value: formatWpm(telemetry.lowWpm) },
+    { label: 'Avg KPM', value: formatKpm(telemetry.averageKpm) },
+    { label: 'High KPM', value: formatKpm(telemetry.highKpm) },
+    { label: 'Low KPM', value: formatKpm(telemetry.lowKpm) },
     { label: 'Accuracy', value: formatAccuracy(telemetry.accuracy) },
     { label: 'Max Combo', value: `${telemetry.maxCombo}` },
     { label: 'Avg Len', value: telemetry.avgSequenceLength > 0 ? telemetry.avgSequenceLength.toFixed(1) : '—' },

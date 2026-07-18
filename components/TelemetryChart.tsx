@@ -13,7 +13,7 @@ const PLOT_H = H - PAD.top - PAD.bottom
 
 const AXIS = '#949494'
 const GRID = '#2a2a2a'
-const WPM_COLOR = '#3ad07a'
+const KPM_COLOR = '#3ad07a'
 const SCATTER_COLOR = '#5ab0ff'
 
 function niceMax(value: number): number {
@@ -34,20 +34,20 @@ function ticks(max: number, count = 4): number[] {
 /**
  * Unified telemetry chart combining three correlated views of the session in a
  * single SVG:
- *   - top:    WPM-over-time line chart (green) with score markers (gold)
- *   - middle: WPM (x) vs Accuracy (y) scatter plot (blue)
- *   - bottom:  WPM distribution histogram (green)
- * All three share the same WPM axis scale so correlations are visually aligned.
+ *   - top:    KPM-over-time line chart (green) with score markers (gold)
+ *   - middle: KPM (x) vs Accuracy (y) scatter plot (blue)
+ *   - bottom:  KPM distribution histogram (green)
+ * All three share the same KPM axis scale so correlations are visually aligned.
  */
 export default function TelemetryChart({ telemetry, className }: TelemetryChartProps) {
   const samples = telemetry.samples
-  const pts = samples.filter((s) => s.wpm > 0)
+  const pts = samples.filter((s) => s.kpm > 0)
   const hasData = pts.length > 0
 
   let maxWpm = 1
   let maxT = 1
   for (const s of pts) {
-    if (s.wpm > maxWpm) maxWpm = s.wpm
+    if (s.kpm > maxWpm) maxWpm = s.kpm
     if (s.t > maxT) maxT = s.t
   }
   maxWpm = niceMax(maxWpm)
@@ -94,34 +94,34 @@ export default function TelemetryChart({ telemetry, className }: TelemetryChartP
           {/* Band separators + labels */}
           <line x1={PAD.left} y1={yMid} x2={W - PAD.right} y2={yMid} stroke={AXIS} strokeWidth={1} strokeDasharray="3 3" />
           <line x1={PAD.left} y1={yBot} x2={W - PAD.right} y2={yBot} stroke={AXIS} strokeWidth={1} strokeDasharray="3 3" />
-          <text x={PAD.left} y={yTop + 12} fontSize={9} fill={WPM_COLOR}>WPM over time</text>
-          <text x={PAD.left} y={yMid + 12} fontSize={9} fill={SCATTER_COLOR}>WPM (x) vs Accuracy (y)</text>
-          <text x={PAD.left} y={yBot + 12} fontSize={9} fill={WPM_COLOR}>WPM distribution</text>
+          <text x={PAD.left} y={yTop + 12} fontSize={9} fill={KPM_COLOR}>KPM over time</text>
+          <text x={PAD.left} y={yMid + 12} fontSize={9} fill={SCATTER_COLOR}>KPM (x) vs Accuracy (y)</text>
+          <text x={PAD.left} y={yBot + 12} fontSize={9} fill={KPM_COLOR}>KPM distribution</text>
 
-          {/* Top band: WPM line + score markers over time */}
+          {/* Top band: KPM line + score markers over time */}
           {pts.length > 1 && (
             <polyline
-              points={pts.map((s) => `${xForT(s.t)},${yForWpm(s.wpm, yTop)}`).join(' ')}
+              points={pts.map((s) => `${xForT(s.t)},${yForWpm(s.kpm, yTop)}`).join(' ')}
               fill="none"
-              stroke={WPM_COLOR}
+              stroke={KPM_COLOR}
               strokeWidth={2}
             />
           )}
           {pts.map((s, i) => (
-            <circle key={`top-${i}`} cx={xForT(s.t)} cy={yForWpm(s.wpm, yTop)} r={3} fill={WPM_COLOR} />
+            <circle key={`top-${i}`} cx={xForT(s.t)} cy={yForWpm(s.kpm, yTop)} r={3} fill={KPM_COLOR} />
           ))}
 
-          {/* Middle band: scatter (WPM x vs Accuracy y) */}
+          {/* Middle band: scatter (KPM x vs Accuracy y) */}
           {pts.map((s, i) => (
-            <circle key={`sc-${i}`} cx={xForWpm(s.wpm)} cy={yForAccuracy(s.accuracy)} r={3.5} fill={SCATTER_COLOR} opacity={0.85} />
+            <circle key={`sc-${i}`} cx={xForWpm(s.kpm)} cy={yForAccuracy(s.accuracy)} r={3.5} fill={SCATTER_COLOR} opacity={0.85} />
           ))}
 
-          {/* Bottom band: WPM histogram */}
+          {/* Bottom band: KPM histogram */}
           {(() => {
             const bins = 6
             const counts = new Array(bins).fill(0)
             pts.forEach((s) => {
-              const idx = Math.min(bins - 1, Math.floor((s.wpm / maxWpm) * bins))
+              const idx = Math.min(bins - 1, Math.floor((s.kpm / maxWpm) * bins))
               counts[idx] += 1
             })
             const maxCount = Math.max(1, ...counts)
@@ -131,7 +131,7 @@ export default function TelemetryChart({ telemetry, className }: TelemetryChartP
               const x = PAD.left + i * binW + binW * 0.15
               const w = binW * 0.7
               const y = yBot + bandH - h
-              return <rect key={`h-${i}`} x={x} y={y} width={w} height={h} rx={2} fill={WPM_COLOR} opacity={0.85} />
+              return <rect key={`h-${i}`} x={x} y={y} width={w} height={h} rx={2} fill={KPM_COLOR} opacity={0.85} />
             })
           })()}
 
@@ -141,13 +141,13 @@ export default function TelemetryChart({ telemetry, className }: TelemetryChartP
             time →
           </text>
           <text x={PAD.left} y={H - 12} fontSize={9} fill={AXIS}>
-            WPM (left axis)
+            KPM (left axis)
           </text>
 
           {/* Legend */}
           <g transform={`translate(${W - PAD.right - 220}, ${PAD.top - 18})`}>
-            <rect x={0} y={-8} width={10} height={10} rx={2} fill={WPM_COLOR} />
-            <text x={14} y={1} fontSize={9} fill={AXIS}>WPM</text>
+            <rect x={0} y={-8} width={10} height={10} rx={2} fill={KPM_COLOR} />
+            <text x={14} y={1} fontSize={9} fill={AXIS}>KPM</text>
             <circle cx={75} cy={-3} r={4} fill={SCATTER_COLOR} />
             <text x={84} y={1} fontSize={9} fill={AXIS}>Accuracy</text>
           </g>

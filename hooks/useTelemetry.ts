@@ -10,7 +10,7 @@ export interface UseTelemetry {
   start: () => void
   /** Freeze the clock (call at game over). */
   stop: () => void
-  /** Advance the clock; call from the game loop to keep WPM fresh. */
+  /** Advance the clock; call from the game loop to keep KPM fresh. */
   tick: () => void
   /** Record a keystroke. */
   recordInput: (correct: boolean) => void

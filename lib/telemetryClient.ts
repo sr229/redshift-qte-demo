@@ -36,7 +36,7 @@ class TelemetryWorkerClient {
         debug('← snapshot received', {
           totalInputs: msg.telemetry.totalInputs,
           sequencesCompleted: msg.telemetry.sequencesCompleted,
-          averageWpm: Math.round(msg.telemetry.averageWpm),
+          averageKpm: Math.round(msg.telemetry.averageKpm),
         })
         this.latest = msg.telemetry
         for (const listener of this.listeners) listener(msg.telemetry)

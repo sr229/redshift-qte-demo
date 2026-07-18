@@ -1,9 +1,10 @@
 /**
  * Framework-agnostic telemetry tracking for QTE gameplay.
  *
- * Tracks input accuracy, combos, and WPM (words-per-minute) metrics that are
- * shared between singleplayer and multiplayer sessions. A "word" is the
- * standard typing definition of 5 keystrokes.
+ * Tracks input accuracy, combos, and KPM (keystrokes-per-minute) metrics that
+ * are shared between singleplayer and multiplayer sessions. KPM counts raw
+ * keystrokes per minute rather than the typing "words" convention, which is a
+ * better fit for directional QTE input.
  *
  * This module is intentionally free of React so it can be reused by any game
  * loop (singleplayer timer, multiplayer realtime, tests, etc.).
@@ -25,14 +26,14 @@ export interface Telemetry {
   maxCombo: number
   /** Total active playing time in milliseconds. */
   elapsedMs: number
-  /** WPM of the in-progress sequence so far. */
-  currentWpm: number
-  /** Session-wide average WPM (correct keystrokes / 5 / minutes). */
-  averageWpm: number
-  /** Highest per-sequence WPM observed this session. */
-  highWpm: number
-  /** Lowest per-sequence WPM observed this session. */
-  lowWpm: number
+  /** KPM of the in-progress sequence so far. */
+  currentKpm: number
+  /** Session-wide average KPM (correct keystrokes / minutes). */
+  averageKpm: number
+  /** Highest per-sequence KPM observed this session. */
+  highKpm: number
+  /** Lowest per-sequence KPM observed this session. */
+  lowKpm: number
   /** Fraction of correct inputs in [0, 1]. */
   accuracy: number
   /** Time-series samples captured per completed sequence. */
@@ -45,8 +46,8 @@ export interface TelemetrySample {
   t: number
   /** Cumulative score at the time of the sample. */
   score: number
-  /** WPM for the sequence that was just completed. */
-  wpm: number
+  /** KPM for the sequence that was just completed. */
+  kpm: number
   /** Accuracy up to this point, in [0, 1]. */
   accuracy: number
   /** Longest combo up to this point. */
@@ -55,7 +56,15 @@ export interface TelemetrySample {
   length: number
 }
 
-const KEYSTROKES_PER_WORD = 5
+/**
+ * Minimum elapsed time (ms) attributed to a completed sequence when computing
+ * its keystrokes-per-minute. A sequence that "completes" in a near-zero window
+ * (e.g. buffered or auto-repeated key events landing in the same millisecond)
+ * would otherwise divide by a tiny time and report an absurd KPM (tens of
+ * thousands). Flooring the window caps the per-sequence rate at a physically
+ * plausible value.
+ */
+const MIN_SEQ_MS = 250
 
 /**
  * Cap on retained per-sequence samples. Endless sessions can run for thousands of
@@ -74,10 +83,10 @@ export function createEmptyTelemetry(): Telemetry {
     avgSequenceLength: 0,
     maxCombo: 0,
     elapsedMs: 0,
-    currentWpm: 0,
-    averageWpm: 0,
-    highWpm: 0,
-    lowWpm: 0,
+    currentKpm: 0,
+    averageKpm: 0,
+    highKpm: 0,
+    lowKpm: 0,
     accuracy: 1,
     samples: [],
   }
@@ -103,7 +112,7 @@ export class TelemetryTracker {
   private isPlaying = false
   private seqStartMs = 0
   private seqInputs = 0
-  private wpmSamples: number[] = []
+  private kpmSamples: number[] = []
   private samples: TelemetrySample[] = []
   /** Cumulative score, supplied by the game loop via `setScore`. */
   private score = 0
@@ -121,7 +130,7 @@ export class TelemetryTracker {
     this.combo = 0
     this.maxCombo = 0
     this.elapsedMs = 0
-    this.wpmSamples = []
+    this.kpmSamples = []
     this.seqInputs = 0
     this.samples = []
     this.score = 0
@@ -180,18 +189,17 @@ export class TelemetryTracker {
   /** Record that the current sequence was completed; starts measuring the next one. */
   recordSequenceComplete(now: number = Date.now()): void {
     this.sequencesCompleted += 1
-    const seqTimeMs = now - this.seqStartMs
-    let wpm = 0
-    if (seqTimeMs > 0) {
-      const minutes = seqTimeMs / 60_000
-      wpm = this.seqInputs / KEYSTROKES_PER_WORD / minutes
-      this.wpmSamples.push(wpm)
-    }
+    // Floor the elapsed time so a sequence finishing in a near-zero window
+    // can't divide by a tiny time and report an absurd KPM.
+    const seqTimeMs = Math.max(now - this.seqStartMs, MIN_SEQ_MS)
+    const minutes = seqTimeMs / 60_000
+    const kpm = this.seqInputs / minutes
+    this.kpmSamples.push(kpm)
     this.totalSeqLength += this.currentSeqLength
     this.samples.push({
       t: this.elapsedMs,
       score: this.score,
-      wpm,
+      kpm,
       accuracy: this.totalInputs > 0 ? this.correctInputs / this.totalInputs : 1,
       maxCombo: this.maxCombo,
       length: this.currentSeqLength,
@@ -208,21 +216,23 @@ export class TelemetryTracker {
   /** Produce an immutable snapshot of the current telemetry. */
   getSnapshot(): Telemetry {
     const minutes = this.elapsedMs / 60_000
-    const averageWpm =
-      minutes > 0 ? this.correctInputs / KEYSTROKES_PER_WORD / minutes : 0
+    const averageKpm = minutes > 0 ? this.correctInputs / minutes : 0
 
-    let currentWpm = 0
-    const seqTimeMs = this.isPlaying ? Date.now() - this.seqStartMs : 0
-    if (seqTimeMs > 0) {
+    let currentKpm = 0
+    const seqTimeMs = Math.max(
+      this.isPlaying ? Date.now() - this.seqStartMs : 0,
+      MIN_SEQ_MS,
+    )
+    if (this.isPlaying) {
       const seqMinutes = seqTimeMs / 60_000
-      currentWpm = this.seqInputs / KEYSTROKES_PER_WORD / seqMinutes
+      currentKpm = this.seqInputs / seqMinutes
     }
 
-    let highWpm = 0
-    let lowWpm = 0
-    for (const w of this.wpmSamples) {
-      if (w > highWpm) highWpm = w
-      if (lowWpm === 0 || w < lowWpm) lowWpm = w
+    let highKpm = 0
+    let lowKpm = 0
+    for (const k of this.kpmSamples) {
+      if (k > highKpm) highKpm = k
+      if (lowKpm === 0 || k < lowKpm) lowKpm = k
     }
 
     const accuracy =
@@ -241,10 +251,10 @@ export class TelemetryTracker {
       avgSequenceLength,
       maxCombo: this.maxCombo,
       elapsedMs: this.elapsedMs,
-      currentWpm,
-      averageWpm,
-      highWpm,
-      lowWpm,
+      currentKpm,
+      averageKpm,
+      highKpm,
+      lowKpm,
       accuracy,
       samples: [...this.samples],
     }

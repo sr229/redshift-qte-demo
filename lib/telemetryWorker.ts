@@ -29,7 +29,7 @@ function post(event: TelemetryEvent): void {
       totalInputs: event.telemetry.totalInputs,
       correctInputs: event.telemetry.correctInputs,
       sequencesCompleted: event.telemetry.sequencesCompleted,
-      averageWpm: Math.round(event.telemetry.averageWpm),
+      averageKpm: Math.round(event.telemetry.averageKpm),
       accuracy: Number(event.telemetry.accuracy.toFixed(3)),
     })
   }
