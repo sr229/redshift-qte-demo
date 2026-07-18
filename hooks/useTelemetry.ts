@@ -15,6 +15,8 @@ export interface UseTelemetry {
   recordInput: (correct: boolean) => void
   /** Record a completed sequence. */
   recordSequenceComplete: () => void
+  /** Update the cumulative score. */
+  setScore: (score: number) => void
   /** Reset to a blank session. */
   reset: () => void
 }
@@ -64,6 +66,10 @@ export function useTelemetry(): UseTelemetry {
     sync()
   }, [sync])
 
+  const setScore = useCallback((score: number) => {
+    trackerRef.current!.setScore(score)
+  }, [])
+
   const reset = useCallback(() => {
     trackerRef.current!.reset()
     sync()
@@ -76,6 +82,7 @@ export function useTelemetry(): UseTelemetry {
     tick,
     recordInput,
     recordSequenceComplete,
+    setScore,
     reset,
   }
 }

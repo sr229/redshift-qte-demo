@@ -4,6 +4,7 @@ import { Play, Home } from '@pxlkit/ui'
 import type { SingleplayerState } from '../lib/types'
 import type { Telemetry } from '../lib/telemetry'
 import TelemetryStats from './TelemetryStats'
+import TelemetryChart from './TelemetryChart'
 
 interface GameOverScreenProps {
   state: SingleplayerState
@@ -21,28 +22,28 @@ export default function GameOverScreen({ state, telemetry, onRestart, onHome }: 
   }
 
   return (
-    <PixelCard tone="neutral" className="flex w-full max-w-md flex-col items-center gap-6 text-center">
-      <h2 className="font-pixel text-3xl font-bold text-retro-text">Game Over</h2>
-      <p className="font-pixel text-xl text-retro-text">
-        Final score: <span className="font-mono text-retro-green">{state.score}</span>
-      </p>
-      {state.mode === 'endless' && (
+    <div className="flex w-full flex-col items-center gap-6">
+      <PixelCard tone="neutral" className="flex w-full max-w-md flex-col items-center gap-6 text-center">
+        <h2 className="font-pixel text-3xl font-bold text-retro-text">Game Over</h2>
         <p className="font-pixel text-xl text-retro-text">
-          Time survived: <span className="font-mono text-retro-green">{formatTime(state.elapsedMs)}</span>
+          Final score: <span className="font-mono text-retro-green">{state.score}</span>
         </p>
-      )}
-      {state.failed && (
-        <PixelBadge tone="red">You entered a wrong sequence.</PixelBadge>
-      )}
-      <TelemetryStats telemetry={telemetry} title="Round Stats" />
-      <div className="flex justify-center gap-4 pt-4">
-        <PixelButton tone="green" iconLeft={<PxlKitIcon icon={Play} size={16} />} onClick={onRestart}>
-          Play Again
-        </PixelButton>
-        <PixelButton tone="neutral" variant="outline" iconLeft={<PxlKitIcon icon={Home} size={16} />} onClick={onHome}>
-          Main Menu
-        </PixelButton>
-      </div>
-    </PixelCard>
+        {state.mode === 'endless' && (
+          <p className="font-pixel text-xl text-retro-text">
+            Time survived: <span className="font-mono text-retro-green">{formatTime(state.elapsedMs)}</span>
+          </p>
+        )}
+        <TelemetryStats telemetry={telemetry} title="Round Stats" />
+        <div className="flex justify-center gap-4 pt-4">
+          <PixelButton tone="green" iconLeft={<PxlKitIcon icon={Play} size={16} />} onClick={onRestart}>
+            Play Again
+          </PixelButton>
+          <PixelButton tone="neutral" variant="outline" iconLeft={<PxlKitIcon icon={Home} size={16} />} onClick={onHome}>
+            Main Menu
+          </PixelButton>
+        </div>
+      </PixelCard>
+      <TelemetryChart telemetry={telemetry} className="max-w-3xl" />
+    </div>
   )
 }

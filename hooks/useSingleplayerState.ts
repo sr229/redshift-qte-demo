@@ -134,6 +134,7 @@ export function useSingleplayerState(): UseSingleplayerState {
         if (nextProgress >= prev.sequence.steps.length) {
           telemetry.recordSequenceComplete()
           const newScore = prev.score + 1
+          telemetry.setScore(newScore)
           // Endless mode: ramps up difficulty every 25th score.
           const isHarder = newScore > 0 && newScore % 25 === 0
           const nextLimitSeconds = isHarder ? Math.max(5, prev.limitSeconds - 1) : prev.limitSeconds

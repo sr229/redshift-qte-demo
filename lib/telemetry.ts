@@ -33,6 +33,22 @@ export interface Telemetry {
   lowWpm: number
   /** Fraction of correct inputs in [0, 1]. */
   accuracy: number
+  /** Time-series samples captured per completed sequence. */
+  samples: TelemetrySample[]
+}
+
+/** A single time-series data point captured during a session. */
+export interface TelemetrySample {
+  /** Elapsed playing time in milliseconds when the sample was taken. */
+  t: number
+  /** Cumulative score at the time of the sample. */
+  score: number
+  /** WPM for the sequence that was just completed. */
+  wpm: number
+  /** Accuracy up to this point, in [0, 1]. */
+  accuracy: number
+  /** Longest combo up to this point. */
+  maxCombo: number
 }
 
 const KEYSTROKES_PER_WORD = 5
@@ -50,6 +66,7 @@ export function createEmptyTelemetry(): Telemetry {
     highWpm: 0,
     lowWpm: 0,
     accuracy: 1,
+    samples: [],
   }
 }
 
@@ -74,6 +91,9 @@ export class TelemetryTracker {
   private seqStartMs = 0
   private seqInputs = 0
   private wpmSamples: number[] = []
+  private samples: TelemetrySample[] = []
+  /** Cumulative score, supplied by the game loop via `setScore`. */
+  private score = 0
 
   /** Begin (or restart) a session. Resets all accumulated metrics. */
   start(now: number = Date.now()): void {
@@ -86,6 +106,8 @@ export class TelemetryTracker {
     this.elapsedMs = 0
     this.wpmSamples = []
     this.seqInputs = 0
+    this.samples = []
+    this.score = 0
     this.playingStartMs = now
     this.seqStartMs = now
     this.isPlaying = true
@@ -126,15 +148,28 @@ export class TelemetryTracker {
     this.tick(now)
   }
 
+  /** Update the cumulative score (called by the game loop when score changes). */
+  setScore(score: number): void {
+    this.score = score
+  }
+
   /** Record that the current sequence was completed; starts measuring the next one. */
   recordSequenceComplete(now: number = Date.now()): void {
     this.sequencesCompleted += 1
     const seqTimeMs = now - this.seqStartMs
+    let wpm = 0
     if (seqTimeMs > 0) {
       const minutes = seqTimeMs / 60_000
-      const wpm = this.seqInputs / KEYSTROKES_PER_WORD / minutes
+      wpm = this.seqInputs / KEYSTROKES_PER_WORD / minutes
       this.wpmSamples.push(wpm)
     }
+    this.samples.push({
+      t: this.elapsedMs + (now - this.playingStartMs),
+      score: this.score,
+      wpm,
+      accuracy: this.totalInputs > 0 ? this.correctInputs / this.totalInputs : 1,
+      maxCombo: this.maxCombo,
+    })
     this.seqStartMs = now
     this.seqInputs = 0
   }
@@ -174,6 +209,7 @@ export class TelemetryTracker {
       highWpm,
       lowWpm,
       accuracy,
+      samples: [...this.samples],
     }
   }
 }

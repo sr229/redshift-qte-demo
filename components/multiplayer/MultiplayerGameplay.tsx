@@ -7,6 +7,7 @@ import type { Lobby, MultiplayerParticipant, QteDirection } from '../../lib/type
 import { keyToDirection, generateSequence } from '../../lib/qte'
 import { useTelemetry } from '../../hooks/useTelemetry'
 import TelemetryStats from '../TelemetryStats'
+import TelemetryChart from '../TelemetryChart'
 
 interface MultiplayerGameplayProps {
   lobby: Lobby
@@ -195,6 +196,7 @@ export default function MultiplayerGameplay({ lobby, onLeave }: MultiplayerGamep
       if (nextProgress >= steps.length) {
         telemetry.recordSequenceComplete()
         const newScore = prev.score + 500
+        telemetry.setScore(newScore)
         
         if (lobby.variant === 'elimination') {
           const isHarder = newScore > 0 && (newScore / 500) % 25 === 0
@@ -309,6 +311,7 @@ export default function MultiplayerGameplay({ lobby, onLeave }: MultiplayerGamep
 
         {/* Live telemetry HUD */}
         <TelemetryStats telemetry={telemetry.telemetry} title="Your Telemetry" className="max-w-lg" />
+        <TelemetryChart telemetry={telemetry.telemetry} className="max-w-3xl" />
       </section>
     </main>
   )
