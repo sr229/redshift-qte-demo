@@ -25,6 +25,23 @@ export function endlessTimeLimit(completed: number): number {
   return Math.max(1500, 5000 - completed * 250)
 }
 
+/** Score at which endless mode steps up to longer, randomly switched combinations. */
+export const ENDLESS_HARD_THRESHOLD = 25
+
+/** Lengths used for the longer endless-mode combinations once the threshold is reached. */
+export const ENDLESS_LONG_LENGTHS = [4, 6, 8]
+
+/**
+ * Determine the combination length for an endless-mode sequence given the current score.
+ * Below the hard threshold, combinations stay at the base length. Once the player reaches
+ * the threshold, the length randomly switches between 4, 6, and 8 to keep things varied
+ * and harder.
+ */
+export function endlessSequenceLength(score: number, baseLength: number): number {
+  if (score < ENDLESS_HARD_THRESHOLD) return baseLength
+  return ENDLESS_LONG_LENGTHS[Math.floor(Math.random() * ENDLESS_LONG_LENGTHS.length)]
+}
+
 /** Map a keyboard event to a QTE direction, or null if it isn't a directional key. */
 export function keyToDirection(key: string): QteDirection | null {
   switch (key) {

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { GameMode, QteDirection, SingleplayerState } from '../lib/types'
-import { generateSequence, keyToDirection } from '../lib/qte'
+import { endlessSequenceLength, generateSequence, keyToDirection } from '../lib/qte'
 import { useTelemetry } from './useTelemetry'
 
 const PRESTART_DURATION_MS = 9_000
@@ -49,11 +49,14 @@ export function useSingleplayerState(): UseSingleplayerState {
     (mode: GameMode, limitSeconds: number) => {
       clearTimer()
       telemetry.start()
+      const initialLength =
+        mode === 'endless' ? endlessSequenceLength(0, SEQUENCE_LENGTH) : SEQUENCE_LENGTH
+      telemetry.setSequenceLength(initialLength)
       setState({
         phase: 'prestart',
         mode,
         score: 0,
-        sequence: generateSequence(SEQUENCE_LENGTH),
+        sequence: generateSequence(initialLength),
         progress: 0,
         timeLeftMs: (mode === 'endless' ? 15 : limitSeconds) * 1000,
         prestartTimeLeftMs: PRESTART_DURATION_MS,
@@ -138,11 +141,16 @@ export function useSingleplayerState(): UseSingleplayerState {
           // Endless mode: ramps up difficulty every 25th score.
           const isHarder = newScore > 0 && newScore % 25 === 0
           const nextLimitSeconds = isHarder ? Math.max(5, prev.limitSeconds - 1) : prev.limitSeconds
-          
+          const nextLength =
+            prev.mode === 'endless'
+              ? endlessSequenceLength(newScore, SEQUENCE_LENGTH)
+              : SEQUENCE_LENGTH
+          telemetry.setSequenceLength(nextLength)
+
           return {
             ...prev,
             score: newScore,
-            sequence: generateSequence(SEQUENCE_LENGTH),
+            sequence: generateSequence(nextLength),
             progress: 0,
             failed: false,
             // Endless mode: reset timer to current limit, difficulty ramps up periodically.

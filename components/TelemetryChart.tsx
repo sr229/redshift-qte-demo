@@ -44,8 +44,14 @@ export default function TelemetryChart({ telemetry, className }: TelemetryChartP
   const pts = samples.filter((s) => s.wpm > 0)
   const hasData = pts.length > 0
 
-  const maxWpm = niceMax(Math.max(1, ...pts.map((s) => s.wpm)))
-  const maxT = niceMax(Math.max(1, ...pts.map((s) => s.t)))
+  let maxWpm = 1
+  let maxT = 1
+  for (const s of pts) {
+    if (s.wpm > maxWpm) maxWpm = s.wpm
+    if (s.t > maxT) maxT = s.t
+  }
+  maxWpm = niceMax(maxWpm)
+  maxT = niceMax(maxT)
 
   // Three equal-height bands within the plot area.
   const bandH = PLOT_H / 3

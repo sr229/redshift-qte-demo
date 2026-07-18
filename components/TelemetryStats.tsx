@@ -15,13 +15,6 @@ function formatAccuracy(accuracy: number): string {
   return `${(accuracy * 100).toFixed(0)}%`
 }
 
-function formatTime(ms: number): string {
-  const totalSecs = ms / 1000
-  const mins = Math.floor(totalSecs / 60)
-  const secs = (totalSecs % 60).toFixed(1)
-  return `${mins.toString().padStart(2, '0')}:${secs.padStart(4, '0')}`
-}
-
 /**
  * Shared read-only display of gameplay telemetry (WPM, accuracy, combos, etc.).
  * Used by both the singleplayer results screen and the multiplayer HUD.
@@ -33,9 +26,9 @@ export default function TelemetryStats({ telemetry, title, className }: Telemetr
     { label: 'Low WPM', value: formatWpm(telemetry.lowWpm) },
     { label: 'Accuracy', value: formatAccuracy(telemetry.accuracy) },
     { label: 'Max Combo', value: `${telemetry.maxCombo}` },
+    { label: 'Avg Len', value: telemetry.avgSequenceLength > 0 ? telemetry.avgSequenceLength.toFixed(1) : '—' },
     { label: 'Sequences', value: `${telemetry.sequencesCompleted}` },
     { label: 'Inputs', value: `${telemetry.totalInputs}` },
-    { label: 'Time', value: formatTime(telemetry.elapsedMs) },
   ]
 
   return (

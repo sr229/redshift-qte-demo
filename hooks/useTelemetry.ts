@@ -17,6 +17,8 @@ export interface UseTelemetry {
   recordSequenceComplete: () => void
   /** Update the cumulative score. */
   setScore: (score: number) => void
+  /** Record the length of the in-progress sequence. */
+  setSequenceLength: (length: number) => void
   /** Reset to a blank session. */
   reset: () => void
 }
@@ -70,6 +72,10 @@ export function useTelemetry(): UseTelemetry {
     trackerRef.current!.setScore(score)
   }, [])
 
+  const setSequenceLength = useCallback((length: number) => {
+    trackerRef.current!.setSequenceLength(length)
+  }, [])
+
   const reset = useCallback(() => {
     trackerRef.current!.reset()
     sync()
@@ -83,6 +89,7 @@ export function useTelemetry(): UseTelemetry {
     recordInput,
     recordSequenceComplete,
     setScore,
+    setSequenceLength,
     reset,
   }
 }
