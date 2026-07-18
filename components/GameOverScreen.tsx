@@ -34,8 +34,8 @@ export default function GameOverScreen({ state, telemetry, onRestart, onHome }: 
       {state.failed && (
         <PixelBadge tone="red">You entered a wrong sequence.</PixelBadge>
       )}
-      <TelemetryStats telemetry={telemetry} title="Session Telemetry" />
-      <div className="flex justify-center gap-4">
+      <TelemetryStats telemetry={telemetry} title="Round Stats" />
+      <div className="flex justify-center gap-4 pt-4">
         <PixelButton tone="green" iconLeft={<PxlKitIcon icon={Play} size={16} />} onClick={onRestart}>
           Play Again
         </PixelButton>
