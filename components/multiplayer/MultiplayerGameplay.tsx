@@ -5,6 +5,8 @@ import { Clock, SparkleSmall, Home as HomeIcon } from '@pxlkit/ui'
 import type { ReactElement } from 'react'
 import type { Lobby, MultiplayerParticipant, QteDirection } from '../../lib/types'
 import { keyToDirection, generateSequence } from '../../lib/qte'
+import { useTelemetry } from '../../hooks/useTelemetry'
+import TelemetryStats from '../TelemetryStats'
 
 interface MultiplayerGameplayProps {
   lobby: Lobby
@@ -122,6 +124,8 @@ export default function MultiplayerGameplay({ lobby, onLeave }: MultiplayerGamep
   const [timeLeftMs, setTimeLeftMs] = useState(lobby.variant === 'elimination' ? 15000 : 30000)
   const [limitSeconds, setLimitSeconds] = useState(15)
 
+  const telemetry = useTelemetry()
+
   // Simulate opponent progress
   useEffect(() => {
     const interval = setInterval(() => {
@@ -150,9 +154,11 @@ export default function MultiplayerGameplay({ lobby, onLeave }: MultiplayerGamep
   // Match timer
   useEffect(() => {
     const start = Date.now()
+    telemetry.start()
     const interval = setInterval(() => {
       const now = Date.now()
       const elapsed = now - start
+      telemetry.tick()
       
       if (lobby.variant === 'elimination') {
         const remaining = Math.max(0, (limitSeconds * 1000) - (elapsed % (limitSeconds * 1000)))
@@ -160,25 +166,34 @@ export default function MultiplayerGameplay({ lobby, onLeave }: MultiplayerGamep
       } else {
         const remaining = Math.max(0, 30000 - elapsed)
         setTimeLeftMs(remaining)
-        if (remaining <= 0) clearInterval(interval)
+        if (remaining <= 0) {
+          telemetry.stop()
+          clearInterval(interval)
+        }
       }
     }, 100)
-    return () => clearInterval(interval)
-  }, [limitSeconds, lobby.variant])
+    return () => {
+      telemetry.stop()
+      clearInterval(interval)
+    }
+  }, [limitSeconds, lobby.variant, telemetry])
 
   const handleInput = useCallback((direction: QteDirection) => {
     setLocalParticipant((prev) => {
       if (!prev.alive || !prev.sequence) return prev
       const steps = prev.sequence.steps
       const expected = steps[prev.progress]
+      const correct = direction === expected
+      telemetry.recordInput(correct)
       
-      if (direction !== expected) {
+      if (!correct) {
         if (lobby.variant === 'elimination') return { ...prev, progress: 0 }
         return { ...prev, progress: 0 }
       }
       
       const nextProgress = prev.progress + 1
       if (nextProgress >= steps.length) {
+        telemetry.recordSequenceComplete()
         const newScore = prev.score + 500
         
         if (lobby.variant === 'elimination') {
@@ -197,7 +212,7 @@ export default function MultiplayerGameplay({ lobby, onLeave }: MultiplayerGamep
       }
       return { ...prev, progress: nextProgress }
     })
-  }, [lobby.variant, limitSeconds])
+  }, [lobby.variant, limitSeconds, telemetry])
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -291,6 +306,9 @@ export default function MultiplayerGameplay({ lobby, onLeave }: MultiplayerGamep
           <PxlKitIcon icon={Clock} size={14} />
           {formatTime(timeLeftMs)}
         </div>
+
+        {/* Live telemetry HUD */}
+        <TelemetryStats telemetry={telemetry.telemetry} title="Your Telemetry" className="max-w-lg" />
       </section>
     </main>
   )

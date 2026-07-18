@@ -26,6 +26,8 @@ export interface SingleplayerState {
   limitSeconds: number
   /** Whether the most recent input was wrong. */
   failed: boolean
+  /** Total time elapsed in milliseconds while playing (used for endless mode survival time). */
+  elapsedMs: number
 }
 
 export interface MultiplayerParticipant {

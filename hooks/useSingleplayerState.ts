@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { GameMode, QteDirection, SingleplayerState } from '../lib/types'
 import { generateSequence, keyToDirection } from '../lib/qte'
+import { useTelemetry } from './useTelemetry'
 
 const PRESTART_DURATION_MS = 9_000
 const SEQUENCE_LENGTH = 4
@@ -16,6 +17,7 @@ function createInitialState(mode: GameMode, limitSeconds: number = 5): Singlepla
     prestartTimeLeftMs: PRESTART_DURATION_MS,
     limitSeconds,
     failed: false,
+    elapsedMs: 0,
   }
 }
 
@@ -23,12 +25,15 @@ export interface UseSingleplayerState {
   state: SingleplayerState
   start: (mode: GameMode, limitSeconds: number) => void
   reset: () => void
+  telemetry: ReturnType<typeof useTelemetry>['telemetry']
 }
 
 export function useSingleplayerState(): UseSingleplayerState {
   const [state, setState] = useState<SingleplayerState>(() =>
     createInitialState('timer'),
   )
+
+  const telemetry = useTelemetry()
 
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const lastTickRef = useRef<number>(0)
@@ -43,6 +48,7 @@ export function useSingleplayerState(): UseSingleplayerState {
   const start = useCallback(
     (mode: GameMode, limitSeconds: number) => {
       clearTimer()
+      telemetry.start()
       setState({
         phase: 'prestart',
         mode,
@@ -53,6 +59,7 @@ export function useSingleplayerState(): UseSingleplayerState {
         prestartTimeLeftMs: PRESTART_DURATION_MS,
         limitSeconds: mode === 'endless' ? 15 : limitSeconds,
         failed: false,
+        elapsedMs: 0,
       })
 
       lastTickRef.current = Date.now()
@@ -80,16 +87,20 @@ export function useSingleplayerState(): UseSingleplayerState {
           if (prev.phase === 'playing') {
             if (prev.timeLeftMs <= 0) {
               clearTimer()
+              telemetry.stop()
               return {
                 ...prev,
                 phase: 'gameover',
                 sequence: null,
                 timeLeftMs: 0,
+                elapsedMs: prev.elapsedMs + delta,
               }
             }
+            telemetry.tick()
             return {
               ...prev,
               timeLeftMs: Math.max(0, prev.timeLeftMs - delta),
+              elapsedMs: prev.elapsedMs + delta,
             }
           }
 
@@ -102,15 +113,18 @@ export function useSingleplayerState(): UseSingleplayerState {
 
   const reset = useCallback(() => {
     clearTimer()
+    telemetry.reset()
     setState(createInitialState('timer'))
-  }, [clearTimer])
+  }, [clearTimer, telemetry])
 
   const handleInput = useCallback(
     (direction: QteDirection) => {
       setState((prev) => {
         if (prev.phase !== 'playing' || !prev.sequence) return prev
         const expected = prev.sequence.steps[prev.progress]
-        if (direction !== expected) {
+        const correct = direction === expected
+        telemetry.recordInput(correct)
+        if (!correct) {
           if (prev.mode === 'endless') {
             return { ...prev, progress: 0 }
           }
@@ -118,6 +132,7 @@ export function useSingleplayerState(): UseSingleplayerState {
         }
         const nextProgress = prev.progress + 1
         if (nextProgress >= prev.sequence.steps.length) {
+          telemetry.recordSequenceComplete()
           const newScore = prev.score + 1
           // Endless mode: ramps up difficulty every 25th score.
           const isHarder = newScore > 0 && newScore % 25 === 0
@@ -137,7 +152,7 @@ export function useSingleplayerState(): UseSingleplayerState {
         return { ...prev, progress: nextProgress, failed: false }
       })
     },
-    [],
+    [telemetry],
   )
 
   useEffect(() => {
@@ -151,5 +166,5 @@ export function useSingleplayerState(): UseSingleplayerState {
 
   useEffect(() => clearTimer, [clearTimer])
 
-  return { state, start, reset }
+  return { state, start, reset, telemetry: telemetry.telemetry }
 }

@@ -67,6 +67,7 @@ export default function Home() {
         <div className="flex min-h-screen flex-col items-center justify-center p-4 bg-retro-bg">
           <GameOverScreen
             state={single.state}
+            telemetry={single.telemetry}
             onRestart={() => single.start(mode, Number(lobbyWindowSeconds))}
             onHome={() => setScreen('menu')}
           />
