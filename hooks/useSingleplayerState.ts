@@ -37,6 +37,7 @@ export function useSingleplayerState(): UseSingleplayerState {
 
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const lastTickRef = useRef<number>(0)
+  const sequenceLengthRef = useRef<number>(SEQUENCE_LENGTH)
 
   const clearTimer = useCallback(() => {
     if (timerRef.current !== null) {
@@ -53,6 +54,7 @@ export function useSingleplayerState(): UseSingleplayerState {
         mode === 'endless'
           ? endlessSequenceLength(0, SEQUENCE_LENGTH)
           : sequenceLength ?? SEQUENCE_LENGTH
+      sequenceLengthRef.current = initialLength
       telemetry.setSequenceLength(initialLength)
       setState({
         phase: 'prestart',
@@ -146,7 +148,7 @@ export function useSingleplayerState(): UseSingleplayerState {
           const nextLength =
             prev.mode === 'endless'
               ? endlessSequenceLength(newScore, SEQUENCE_LENGTH)
-              : SEQUENCE_LENGTH
+              : sequenceLengthRef.current
           telemetry.setSequenceLength(nextLength)
 
           return {
