@@ -27,6 +27,9 @@ interface ChangeModeBody {
   hostId: string
   variant?: string
   phase?: string
+  /** ISO timestamp set by the host when the round starts; clients anchor their
+   *  local countdown to this so all players share a synchronized clock. */
+  startedAt?: string
 }
 
 Deno.serve(async (req: Request) => {
@@ -60,7 +63,7 @@ Deno.serve(async (req: Request) => {
     })
   }
 
-  const { code, hostId, variant, phase } = body
+  const { code, hostId, variant, phase, startedAt } = body
   if (!code || !hostId) {
     return new Response(
       JSON.stringify({ ok: false, error: 'code and hostId are required' }),
@@ -68,7 +71,7 @@ Deno.serve(async (req: Request) => {
     )
   }
 
-  const update: Record<string, string> = {}
+  const update: Record<string, unknown> = {}
   if (variant !== undefined) {
     if (!VARIANTS.includes(variant as Variant)) {
       return new Response(
@@ -86,6 +89,16 @@ Deno.serve(async (req: Request) => {
       )
     }
     update.phase = phase
+  }
+  // Persist the synchronized start instant when the host begins the round.
+  if (startedAt !== undefined) {
+    if (Number.isNaN(Date.parse(startedAt))) {
+      return new Response(
+        JSON.stringify({ ok: false, error: 'Invalid startedAt' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+      )
+    }
+    update.started_at = startedAt
   }
   if (Object.keys(update).length === 0) {
     return new Response(

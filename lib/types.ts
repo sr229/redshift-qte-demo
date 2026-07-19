@@ -48,4 +48,7 @@ export interface Lobby {
   participants: MultiplayerParticipant[]
   variant: MultiplayerVariant
   phase: GamePhase
+  /** Epoch ms when the host started the round; clients anchor their local
+   *  countdown to this so everyone shares the same synchronized clock. */
+  startedAt: number | null
 }

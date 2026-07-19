@@ -130,10 +130,12 @@ export default function MultiplayerGameplay({ lobby, localParticipantId, onLeave
 
   // Refs backing the match clock so mistake penalties stick and the timer can read the
   // latest limit without restarting the interval (which would reset telemetry).
+  // The clock is anchored to the host's shared `startedAt` so every client counts
+  // down from the same instant; only per-player mistake penalties are local.
   const timeLeftRef = useRef(
     lobby.variant === 'elimination' ? ENDLESS_TIME_START_SECONDS * 1000 : 5000,
   )
-  const lastTickRef = useRef(0)
+  const penaltyRef = useRef(0)
   const limitSecondsRef = useRef(limitSeconds)
   const eliminatedRef = useRef(false)
   useEffect(() => {
@@ -142,22 +144,27 @@ export default function MultiplayerGameplay({ lobby, localParticipantId, onLeave
 
   const telemetry = useTelemetry()
 
-  // Match timer — decrements the local player's clock so mistake penalties stick.
-  // Timer-like variants (score/reaction) run a single fixed clock; the endless-like
-  // variant (elimination) uses a continuously decaying clock and ends in elimination.
+  // Match timer — ticks locally but is anchored to the host's `startedAt` so all
+  // players share a synchronized clock. Timer-like variants (score/reaction) run a
+  // single fixed clock; the endless-like variant (elimination) uses a continuously
+  // decaying clock and ends in elimination. Per-player mistake penalties are applied
+  // locally on top of the shared baseline.
   useEffect(() => {
-    timeLeftRef.current = lobby.variant === 'elimination' ? limitSecondsRef.current * 1000 : 5000
+    if (lobby.phase !== 'playing') return
+    const baseLimitMs =
+      lobby.variant === 'elimination' ? limitSecondsRef.current * 1000 : 5000
+    const computeTimeLeft = () => {
+      const elapsed = lobby.startedAt ? Date.now() - lobby.startedAt : 0
+      return Math.max(0, baseLimitMs - elapsed - penaltyRef.current)
+    }
+    timeLeftRef.current = computeTimeLeft()
     setTimeLeftMs(timeLeftRef.current)
-    lastTickRef.current = Date.now()
     telemetry.start()
     const interval = setInterval(() => {
-      const now = Date.now()
-      const delta = now - lastTickRef.current
-      lastTickRef.current = now
+      const next = computeTimeLeft()
+      timeLeftRef.current = next
       telemetry.tick()
-
-      timeLeftRef.current = Math.max(0, timeLeftRef.current - delta)
-      if (timeLeftRef.current <= 0) {
+      if (next <= 0) {
         if (lobby.variant === 'elimination') {
           // Clock ran out: the local player is eliminated.
           eliminatedRef.current = true
@@ -171,13 +178,13 @@ export default function MultiplayerGameplay({ lobby, localParticipantId, onLeave
           clearInterval(interval)
         }
       }
-      setTimeLeftMs(timeLeftRef.current)
+      setTimeLeftMs(next)
     }, 100)
     return () => {
       telemetry.stop()
       clearInterval(interval)
     }
-}, [lobby.variant, telemetry, trackLocal])
+  }, [lobby.phase, lobby.variant, lobby.startedAt, telemetry, trackLocal, localParticipantRef])
 
   const handleInput = useCallback(
     (direction: QteDirection) => {
@@ -192,12 +199,11 @@ export default function MultiplayerGameplay({ lobby, localParticipantId, onLeave
         if (!correct) {
           // Only the endless-like (elimination) variant drains the clock on a
           // mistake, mirroring singleplayer 'endless'. Timer-like variants just
-          // reset progress without a time penalty (singleplayer 'timer').
+          // reset progress without a time penalty (singleplayer 'timer'). The
+          // penalty is local (per-player) and layered on the shared baseline.
           if (lobby.variant === 'elimination') {
-            const penalized = Math.max(
-              0,
-              timeLeftRef.current - ENDLESS_MISTAKE_PENALTY_SECONDS * 1000,
-            )
+            penaltyRef.current += ENDLESS_MISTAKE_PENALTY_SECONDS * 1000
+            const penalized = Math.max(0, timeLeftRef.current - ENDLESS_MISTAKE_PENALTY_SECONDS * 1000)
             timeLeftRef.current = penalized
             setTimeLeftMs(penalized)
             if (penalized <= 0) {
@@ -223,7 +229,9 @@ export default function MultiplayerGameplay({ lobby, localParticipantId, onLeave
           if (lobby.variant === 'elimination') {
             const nextLimitSeconds = endlessTimeLimit(completions)
             setLimitSeconds(nextLimitSeconds)
-            timeLeftRef.current = nextLimitSeconds * 1000
+            // Re-anchor the shared baseline to the new (shorter) limit; the local
+            // penalty carries over so accumulated mistakes still count.
+            timeLeftRef.current = nextLimitSeconds * 1000 - penaltyRef.current
             setTimeLeftMs(timeLeftRef.current)
           }
 

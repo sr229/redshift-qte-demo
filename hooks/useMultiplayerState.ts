@@ -34,6 +34,7 @@ function emptyLobby(code: string, hostName: string, variant: MultiplayerVariant,
     hostId,
     variant,
     phase: 'idle',
+    startedAt: null,
     participants: [
       {
         id: hostId,
@@ -62,10 +63,24 @@ export function useMultiplayerState(): UseMultiplayerState {
   }, [])
 
   const applyLobbyRow = useCallback(
-    (row: { code: string; host_id: string; variant: MultiplayerVariant; phase: Lobby['phase'] }) => {
+    (
+      row: {
+        code: string
+        host_id: string
+        variant: MultiplayerVariant
+        phase: Lobby['phase']
+        started_at?: string | null
+      },
+    ) => {
       setLobby((prev) =>
         prev
-          ? { ...prev, variant: row.variant, phase: row.phase, hostId: row.host_id }
+          ? {
+              ...prev,
+              variant: row.variant,
+              phase: row.phase,
+              hostId: row.host_id,
+              startedAt: row.started_at ? Date.parse(row.started_at) : prev.startedAt,
+            }
           : prev,
       )
     },
@@ -106,7 +121,7 @@ export function useMultiplayerState(): UseMultiplayerState {
       channel.on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'lobbies', filter: `code=eq.${code}` },
-        (payload: RealtimePostgresChangesPayload<{ code: string; host_id: string; variant: MultiplayerVariant; phase: Lobby['phase'] }>) => {
+        (payload: RealtimePostgresChangesPayload<{ code: string; host_id: string; variant: MultiplayerVariant; phase: Lobby['phase']; started_at?: string | null }>) => {
           if (payload.new) applyLobbyRow(payload.new as any)
         },
       )
@@ -166,7 +181,7 @@ export function useMultiplayerState(): UseMultiplayerState {
       channel.on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'lobbies', filter: `code=eq.${normalized}` },
-        (payload: RealtimePostgresChangesPayload<{ code: string; host_id: string; variant: MultiplayerVariant; phase: Lobby['phase'] }>) => {
+        (payload: RealtimePostgresChangesPayload<{ code: string; host_id: string; variant: MultiplayerVariant; phase: Lobby['phase']; started_at?: string | null }>) => {
           if (payload.new) applyLobbyRow(payload.new as any)
         },
       )
@@ -221,7 +236,7 @@ export function useMultiplayerState(): UseMultiplayerState {
 
   const startGame = useCallback(() => {
     setLobby((prev) =>
-      prev ? { ...prev, phase: 'prestart' } : prev,
+      prev ? { ...prev, phase: 'prestart', startedAt: null } : prev,
     )
     // Broadcast the phase change so non-host clients transition too.
     if (isMultiplayerEnabled && supabase && lobby) {
@@ -230,12 +245,22 @@ export function useMultiplayerState(): UseMultiplayerState {
       })
     }
     setTimeout(() => {
+      // Anchor everyone to a single shared start instant so each client's local
+      // countdown stays synchronized regardless of broadcast latency.
+      const startedAt = Date.now()
       setLobby((prev) =>
-        prev && prev.phase === 'prestart' ? { ...prev, phase: 'playing' } : prev,
+        prev && prev.phase === 'prestart'
+          ? { ...prev, phase: 'playing', startedAt }
+          : prev,
       )
       if (isMultiplayerEnabled && supabase && lobby) {
         void supabase.functions.invoke('changeMode', {
-          body: { code: lobby.code, hostId: hostIdRef.current, phase: 'playing' },
+          body: {
+            code: lobby.code,
+            hostId: hostIdRef.current,
+            phase: 'playing',
+            startedAt: new Date(startedAt).toISOString(),
+          },
         })
       }
     }, 9000)
