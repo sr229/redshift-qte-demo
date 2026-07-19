@@ -42,16 +42,18 @@ const LENGTH_OPTIONS = [
 function GameOverLeaderboard({
   code,
   participants,
+  telemetry,
   onHome,
 }: {
   code: string
   participants: import('../lib/types').MultiplayerParticipant[]
+  telemetry: import('../lib/telemetry').Telemetry | null
   onHome: () => void
 }) {
   const { rows } = useLeaderboard(code, participants)
   return (
     <div className="flex min-h-screen flex-col items-center justify-center p-4 bg-retro-bg">
-      <ResultsLeaderboard participants={rows} onHome={onHome} />
+      <ResultsLeaderboard participants={rows} telemetry={telemetry} onHome={onHome} />
     </div>
   )
 }
@@ -75,6 +77,9 @@ export default function Home() {
   const [settingsDialogError, setSettingsDialogError] = useState<string | null>(null)
   const [settingsSaving, setSettingsSaving] = useState(false)
   const [copied, setCopied] = useState(false)
+  // Local player's telemetry for the current multiplayer match, surfaced on the
+  // results screen (not shown in-game). Reset when leaving the match.
+  const [multiTelemetry, setMultiTelemetry] = useState<import('../lib/telemetry').Telemetry | null>(null)
 
   // Share-link support: ?lobby=CODE drops the user straight into the join flow.
   useEffect(() => {
@@ -163,8 +168,10 @@ export default function Home() {
         <GameOverLeaderboard
           code={multi.lobby.code}
           participants={multi.lobby.participants}
+          telemetry={multiTelemetry}
           onHome={() => {
             multi.leaveLobby()
+            setMultiTelemetry(null)
             setScreen('menu')
           }}
         />
@@ -197,8 +204,10 @@ export default function Home() {
           localParticipantId={multi.localParticipantId}
           trackLocal={multi.trackLocal}
           endRound={multi.endRound}
+          onTelemetry={setMultiTelemetry}
           onLeave={() => {
             multi.leaveLobby()
+            setMultiTelemetry(null)
             setScreen('menu')
           }}
         />

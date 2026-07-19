@@ -13,8 +13,7 @@ import {
   ENDLESS_TIME_START_SECONDS,
 } from '../../lib/qte'
 import { useTelemetry } from '../../hooks/useTelemetry'
-import TelemetryStats from '../TelemetryStats'
-import TelemetryChart from '../TelemetryChart'
+import type { Telemetry } from '../../lib/telemetry'
 
 interface MultiplayerGameplayProps {
   lobby: Lobby
@@ -22,6 +21,8 @@ interface MultiplayerGameplayProps {
   onLeave: () => void
   trackLocal: (participant: MultiplayerParticipant) => void
   endRound: () => void
+  /** Called with the local player's final telemetry when the round ends. */
+  onTelemetry?: (telemetry: Telemetry) => void
 }
 
 import { PixelArrowUp, PixelArrowDown, PixelArrowLeft, PixelArrowRight } from '../PixelArrows';
@@ -92,7 +93,7 @@ function ParticipantRow({ participant }: { participant: MultiplayerParticipant }
   )
 }
 
-export default function MultiplayerGameplay({ lobby, localParticipantId, onLeave, trackLocal, endRound }: MultiplayerGameplayProps) {
+export default function MultiplayerGameplay({ lobby, localParticipantId, onLeave, trackLocal, endRound, onTelemetry }: MultiplayerGameplayProps) {
   const [localParticipant, setLocalParticipant] = useState<MultiplayerParticipant>(() => {
     const orig =
       lobby.participants.find((p) => p.id === localParticipantId) ??
@@ -133,8 +134,12 @@ export default function MultiplayerGameplay({ lobby, localParticipantId, onLeave
     localParticipantRef.current = localParticipant
   }, [localParticipant])
 
+  // Telemetry is collected during the match but intentionally NOT shown in-game
+  // (kept out of the gameplay HUD); it is surfaced only on the results screen.
+  const telemetry = useTelemetry()
+
   // Refs backing the match clock so mistake penalties stick and the timer can read the
-  // latest limit without restarting the interval (which would reset telemetry).
+  // latest limit without restarting the interval.
   // The clock is anchored to the host's shared `startedAt` so every client counts
   // down from the same instant; only per-player mistake penalties are local.
   const timeLeftRef = useRef(
@@ -148,8 +153,6 @@ export default function MultiplayerGameplay({ lobby, localParticipantId, onLeave
   useEffect(() => {
     limitSecondsRef.current = limitSeconds
   }, [limitSeconds])
-
-  const telemetry = useTelemetry()
 
   // Match timer — ticks locally but is anchored to the host's `startedAt` so all
   // players share a synchronized clock. Timer-like variants (score/reaction) run a
@@ -180,6 +183,7 @@ export default function MultiplayerGameplay({ lobby, localParticipantId, onLeave
           trackLocal({ ...localParticipantRef.current, alive: false })
         }
         telemetry.stop()
+        onTelemetry?.(telemetry.telemetry)
         clearInterval(interval)
         // The local clock ending ends the round. Only the host actually
         // persists standings + broadcasts gameover; non-hosts are no-ops and
@@ -189,10 +193,9 @@ export default function MultiplayerGameplay({ lobby, localParticipantId, onLeave
       setTimeLeftMs(next)
     }, 100)
     return () => {
-      telemetry.stop()
       clearInterval(interval)
     }
-  }, [lobby.phase, lobby.variant, lobby.startedAt, telemetry, trackLocal, localParticipantRef, endRound])
+  }, [lobby.phase, lobby.variant, lobby.startedAt, telemetry, trackLocal, localParticipantRef, endRound, onTelemetry])
 
   const handleInput = useCallback(
     (direction: QteDirection) => {
@@ -363,10 +366,6 @@ export default function MultiplayerGameplay({ lobby, localParticipantId, onLeave
             You were eliminated! Hang tight — the match ends when the host finishes.
           </p>
         )}
-
-        {/* Live telemetry HUD */}
-        <TelemetryStats telemetry={telemetry.telemetry} title="Your Telemetry" className="max-w-lg" />
-        <TelemetryChart telemetry={telemetry.telemetry} className="max-w-3xl" />
       </section>
     </main>
   )
