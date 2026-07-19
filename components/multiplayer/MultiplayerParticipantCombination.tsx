@@ -1,8 +1,9 @@
+import React from 'react';
 import type { QteDirection } from '../../lib/types'
 
 import { PixelArrowUp, PixelArrowDown, PixelArrowLeft, PixelArrowRight } from '../PixelArrows';
 
-const ARROW: Record<QteDirection, JSX.Element> = {
+const ARROW: Record<QteDirection, React.ReactElement> = {
   up: <PixelArrowUp />,
   down: <PixelArrowDown />,
   left: <PixelArrowLeft />,
