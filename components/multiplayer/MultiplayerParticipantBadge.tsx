@@ -13,7 +13,6 @@ export default function MultiplayerParticipantBadge({
       name={participant.name}
       size="md"
       tone={participant.alive ? 'green' : 'neutral'}
-      title={participant.name}
     />
   )
 }
