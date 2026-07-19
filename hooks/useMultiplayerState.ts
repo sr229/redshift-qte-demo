@@ -238,7 +238,6 @@ export function useMultiplayerState(): UseMultiplayerState {
     async (code: string, name: string) => {
       const normalized = code.toUpperCase()
       if (!isMultiplayerEnabled || !supabase) {
-        // Mock mode has no server to verify against, so allow local testing.
         const participant: MultiplayerParticipant = {
           id: `guest_${normalized}_${name}`,
           name,
@@ -322,7 +321,16 @@ export function useMultiplayerState(): UseMultiplayerState {
   )
 
   const submitResults = useCallback(async () => {
-    if (!lobby || !isMultiplayerEnabled || !supabase) return
+    if (!lobby) return
+    // Mock mode has no server to broadcast the gameover phase, so the local
+    // client flips its own lobby phase directly. There is no Realtime/presence
+    // in mock mode, so the local player is the only participant and should
+    // transition to results regardless of host status. Real mode persists
+    // standings and broadcasts via the Edge Function (Realtime drives it).
+    if (!isMultiplayerEnabled || !supabase) {
+      setLobby((prev) => (prev ? { ...prev, phase: 'gameover' } : prev))
+      return
+    }
     if (!isHost) return
     // Persist final standings so the results screen can read them after
     // presence participants disconnect, then broadcast the gameover phase.
