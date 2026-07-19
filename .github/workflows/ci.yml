@@ -33,15 +33,12 @@ jobs:
       - name: Unit tests
         run: pnpm run test
 
-      # ── Integration: spin up a real local Supabase stack ───────────────
       - name: Setup Supabase CLI
         uses: supabase/setup-cli@v1
         with:
           version: 2.x
 
       - name: Start local Supabase
-        # `supabase start` applies migrations and auto-serves Edge Functions,
-        # and exports VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY to the shell.
         run: |
           supabase start
           {

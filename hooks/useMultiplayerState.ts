@@ -19,6 +19,8 @@ export interface UseMultiplayerState {
   startGame: () => void
   /** Host-only: change the lobby's game mode. */
   updateVariant: (variant: MultiplayerVariant) => Promise<void>
+  /** Host-only: persist final standings and broadcast gameover. */
+  submitResults: () => Promise<void>
 }
 
 function emptyLobby(code: string, hostName: string, variant: MultiplayerVariant, hostId: string): Lobby {
@@ -76,14 +78,18 @@ export function useMultiplayerState(): UseMultiplayerState {
         setLobby(newLobby)
         return
       }
-      const { error: insertError } = await supabase
-        .from('lobbies')
-        .insert({ code, host_id: hostId, variant })
-      if (insertError) {
-        console.error('Failed to register lobby', insertError)
+      // Create the lobby through the Edge Function (service_role) so the code
+      // is collision-free and anon clients can't write directly to `lobbies`.
+      const { data, error: fnError } = await supabase.functions.invoke('createLobby', {
+        body: { hostId, hostName: name, variant },
+      })
+      if (fnError || !data?.ok) {
+        console.error('Failed to create lobby', fnError ?? data)
         throw new Error('Could not create lobby. Please try again.')
       }
-      const channel = supabase.channel(`lobby:${code}`)
+      const realCode: string = data.code ?? code
+      newLobby.code = realCode
+      const channel = supabase.channel(`lobby:${realCode}`)
       channelRef.current = channel
       channel.on('presence', { event: 'sync' }, () => {
         const state = channel.presenceState<MultiplayerParticipant>()
@@ -170,23 +176,63 @@ export function useMultiplayerState(): UseMultiplayerState {
     [applyLobbyRow],
   )
 
+  const submitResults = useCallback(async () => {
+    if (!lobby || !isMultiplayerEnabled || !supabase) return
+    if (!isHost) return
+    // Persist final standings so the results screen can read them after
+    // presence participants disconnect, then broadcast the gameover phase.
+    const { error: fnError } = await supabase.functions.invoke('submitStateToLeaderboard', {
+      body: {
+        code: lobby.code,
+        variant: lobby.variant,
+        participants: lobby.participants.map((p) => ({
+          participantId: p.id,
+          name: p.name,
+          score: p.score,
+          alive: p.alive,
+        })),
+      },
+    })
+    if (fnError) {
+      console.error('Failed to submit leaderboard', fnError)
+    }
+    await supabase.functions.invoke('changeMode', {
+      body: { code: lobby.code, hostId: hostIdRef.current, phase: 'gameover' },
+    })
+  }, [lobby, isHost])
+
   const leaveLobby = useCallback(() => {
+    // Host persists results + broadcasts gameover before tearing down.
+    if (isHost && lobby && isMultiplayerEnabled && supabase) {
+      void submitResults()
+    }
     teardown()
     setIsHost(false)
     hostIdRef.current = null
     setLobby(null)
-  }, [teardown])
+  }, [teardown, submitResults, isHost, lobby, isMultiplayerEnabled, supabase])
 
   const startGame = useCallback(() => {
     setLobby((prev) =>
       prev ? { ...prev, phase: 'prestart' } : prev,
     )
+    // Broadcast the phase change so non-host clients transition too.
+    if (isMultiplayerEnabled && supabase && lobby) {
+      void supabase.functions.invoke('changeMode', {
+        body: { code: lobby.code, hostId: hostIdRef.current, phase: 'prestart' },
+      })
+    }
     setTimeout(() => {
       setLobby((prev) =>
         prev && prev.phase === 'prestart' ? { ...prev, phase: 'playing' } : prev,
       )
+      if (isMultiplayerEnabled && supabase && lobby) {
+        void supabase.functions.invoke('changeMode', {
+          body: { code: lobby.code, hostId: hostIdRef.current, phase: 'playing' },
+        })
+      }
     }, 9000)
-  }, [])
+  }, [lobby])
 
   const updateVariant = useCallback(
     async (variant: MultiplayerVariant) => {
@@ -195,12 +241,13 @@ export function useMultiplayerState(): UseMultiplayerState {
         setLobby((prev) => (prev ? { ...prev, variant } : prev))
         return
       }
-      const { error } = await supabase
-        .from('lobbies')
-        .update({ variant })
-        .eq('code', lobby.code)
-      if (error) {
-        console.error('Failed to update lobby variant', error)
+      // Route through the Edge Function so host authorization is enforced and
+      // anon clients (SELECT-only on `lobbies`) can't change the mode directly.
+      const { error: fnError } = await supabase.functions.invoke('changeMode', {
+        body: { code: lobby.code, hostId: hostIdRef.current, variant },
+      })
+      if (fnError) {
+        console.error('Failed to change game mode', fnError)
         throw new Error('Could not change game mode. Please try again.')
       }
       // Optimistic update; Realtime will confirm.
@@ -224,5 +271,6 @@ export function useMultiplayerState(): UseMultiplayerState {
     leaveLobby,
     startGame,
     updateVariant,
+    submitResults,
   }
 }
