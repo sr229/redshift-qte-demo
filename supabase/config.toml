@@ -45,7 +45,3 @@ enabled = false
 # permits anon inserts. JWT verification must be off so the anonymous CORS
 # preflight (OPTIONS, no Authorization header) is not rejected by the gateway.
 verify_jwt = false
-
-# Match the free-tier remote (vector buckets require a paid plan).
-[vector]
-enabled = false
