@@ -57,7 +57,7 @@ export default function PrestartLobby({ enabled, defaultName, prefillCode, onCre
         </PixelCard>
         <PixelButton
           tone="neutral"
-          variant="ghost"
+          variant="solid"
           iconLeft={<PxlKitIcon icon={HomeIcon} size={16} />}
           onClick={onBack}
         >
@@ -142,7 +142,7 @@ export default function PrestartLobby({ enabled, defaultName, prefillCode, onCre
           <div className="border-t border-retro-border/40 pt-4 flex justify-center">
             <PixelButton
               tone="neutral"
-              variant="ghost"
+              variant="solid"
               iconLeft={<PxlKitIcon icon={HomeIcon} size={16} />}
               onClick={onBack}
             >

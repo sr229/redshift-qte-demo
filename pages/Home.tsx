@@ -138,7 +138,7 @@ export default function Home() {
         <GameplayWindow state={single.state} onInput={single.handleInput} />
         <PixelButton
           tone="neutral"
-          variant="ghost"
+          variant="solid"
           iconLeft={<PxlKitIcon icon={HomeIcon} size={16} />}
           onClick={() => setScreen('menu')}
         >
@@ -195,7 +195,6 @@ export default function Home() {
       )
     }
 
-    // Lobby waiting room — matches MPLobby.png
     if (multi.lobby) {
       const requiredSlots = 6 * 3
       const slots: Array<MultiplayerParticipant & { isGhost?: boolean }> = [
@@ -233,7 +232,7 @@ export default function Home() {
               {multi.isHost && (
                 <PixelButton
                   tone="neutral"
-                  variant="ghost"
+                  variant="solid"
                   onClick={() => {
                     setPendingVariant(multi.lobby?.variant ?? 'score')
                     setModeDialogError(null)
@@ -284,7 +283,7 @@ export default function Home() {
               </PixelButton>
               <PixelButton
                 tone="neutral"
-                variant="ghost"
+                variant="solid"
                 iconLeft={<PxlKitIcon icon={HomeIcon} size={16} />}
                 onClick={() => {
                   multi.leaveLobby()
@@ -306,7 +305,7 @@ export default function Home() {
             <>
               <PixelButton
                 tone="neutral"
-                variant="ghost"
+                variant="solid"
                 onClick={() => setModeDialogOpen(false)}
               >
                 Cancel

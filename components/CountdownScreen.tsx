@@ -127,7 +127,7 @@ export default function CountdownScreen({
 
       <PixelButton
         tone="neutral"
-        variant="ghost"
+        variant="solid"
         iconLeft={<PxlKitIcon icon={HomeIcon} size={16} />}
         onClick={onQuit}
       >
