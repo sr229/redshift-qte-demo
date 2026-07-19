@@ -1,5 +1,18 @@
+@import "tailwindcss";
+
 /* Theme + design tokens are provided by @pxlkit/ui-kit/styles.css (imported in main.tsx).
-   This file is reserved for app-specific custom CSS layered on top of the kit. */
+   This file is reserved for app-specific custom CSS layered on top of the kit.
+
+   @source: pxlkit's compiled components (PixelModal, OverlayBackdrop, PixelSheet, etc.)
+   apply Tailwind utility classes via className (e.g. "fixed inset-0 z-[80]").
+   @tailwindcss/vite ignores node_modules by default, so those utilities were never
+   generated — which left the modal wrapper as `position: fixed` with no insets and
+   pushed it below the viewport. Scanning the kit's dist makes the utilities appear.
+   NOTE: @source only takes effect inside a Tailwind entry (a file that @imports
+   "tailwindcss"), which is why it must live here rather than in a plain CSS file. */
+@source "../node_modules/@pxlkit/ui-kit/dist/**";
+@source "../node_modules/@pxlkit/ui/dist/**";
+@source "../node_modules/@pxlkit/core/dist/**";
 
 /* Warm, eye-friendly tint across the whole app (Anthropic-inspired amber).
    A fixed, non-interactive overlay that multiplies a warm color over everything,
@@ -18,4 +31,12 @@ body::after {
   z-index: 2147483647;
   background: rgba(var(--warm-tint), var(--warm-tint-alpha));
   mix-blend-mode: multiply;
+}
+
+/* Modal scrim: pxlkit's OverlayBackdrop uses `bg-retro-bg/80`, but the retro-bg
+   token color isn't resolving in this build (renders transparent). The user wants
+   a clear black overlay behind dialogs, so force an opaque black scrim here.
+   Kept !important to win over the kit's utility class regardless of source order. */
+[data-pxl-overlay-backdrop] {
+  background-color: rgba(0, 0, 0, 0.8) !important;
 }
