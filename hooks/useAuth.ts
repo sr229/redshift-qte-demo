@@ -25,6 +25,12 @@ export function useAuth() {
   const [user, setUser] = useState<AuthUser | null>(null)
 
   useEffect(() => {
+    if (import.meta.env.VITE_MOCK_MODE === 'true') {
+      setUser({ id: 'mock-user', name: 'Mock Player' })
+      setStatus('authenticated')
+      return
+    }
+
     if (!isMultiplayerEnabled || !supabase) {
       setStatus('anonymous')
       return
