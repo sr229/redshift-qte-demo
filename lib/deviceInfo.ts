@@ -26,7 +26,7 @@ function detectTouch(): boolean {
   )
 }
 
-function classifyDeviceType(ua: string, touch: boolean): DeviceType {
+export function classifyDeviceType(ua: string, touch: boolean): DeviceType {
   const uaData = (navigator as any).userAgentData
   const mobileHint: boolean | undefined = uaData?.mobile
   if (mobileHint === true) return 'mobile'
@@ -38,7 +38,7 @@ function classifyDeviceType(ua: string, touch: boolean): DeviceType {
   return 'unknown'
 }
 
-function detectOs(ua: string): { os: string; version: string | null } {
+export function detectOs(ua: string): { os: string; version: string | null } {
   const rules: Array<{ re: RegExp; name: string }> = [
     { re: /windows nt 10/i, name: 'Windows' },
     { re: /windows nt 6\.3/i, name: 'Windows' },
@@ -65,7 +65,7 @@ function detectOs(ua: string): { os: string; version: string | null } {
   return { os: 'unknown', version: null }
 }
 
-function detectBrowser(ua: string): string {
+export function detectBrowser(ua: string): string {
   if (/edg\//i.test(ua)) return 'Edge'
   if (/opr\//i.test(ua) || /opera/i.test(ua)) return 'Opera'
   if (/chrome|crios/i.test(ua) && !/chromium/i.test(ua)) return 'Chrome'
