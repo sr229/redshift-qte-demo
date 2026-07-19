@@ -6,27 +6,31 @@ import type {
 } from '../lib/types'
 import { generateSequence } from '../lib/qte'
 import { isMultiplayerEnabled, supabase } from '../lib/supabase'
-import type { RealtimeChannel } from '@supabase/supabase-js'
+import type { RealtimeChannel, RealtimePostgresChangesPayload } from '@supabase/supabase-js'
 
 export interface UseMultiplayerState {
   enabled: boolean
   lobby: Lobby | null
+  /** True when the current user is the host of the active lobby. */
+  isHost: boolean
   createLobby: (variant: MultiplayerVariant, name: string) => Promise<void>
   joinLobby: (code: string, name: string) => Promise<void>
   leaveLobby: () => void
   startGame: () => void
+  /** Host-only: change the lobby's game mode. */
+  updateVariant: (variant: MultiplayerVariant) => Promise<void>
 }
 
-function emptyLobby(code: string, hostName: string, variant: MultiplayerVariant): Lobby {
+function emptyLobby(code: string, hostName: string, variant: MultiplayerVariant, hostId: string): Lobby {
   return {
     id: `lobby_${code}`,
     code,
-    hostId: `host_${code}`,
+    hostId,
     variant,
     phase: 'idle',
     participants: [
       {
-        id: `host_${code}`,
+        id: hostId,
         name: hostName,
         score: 0,
         alive: true,
@@ -39,7 +43,9 @@ function emptyLobby(code: string, hostName: string, variant: MultiplayerVariant)
 
 export function useMultiplayerState(): UseMultiplayerState {
   const [lobby, setLobby] = useState<Lobby | null>(null)
+  const [isHost, setIsHost] = useState(false)
   const channelRef = useRef<RealtimeChannel | null>(null)
+  const hostIdRef = useRef<string | null>(null)
 
   const teardown = useCallback(() => {
     if (channelRef.current) {
@@ -48,17 +54,31 @@ export function useMultiplayerState(): UseMultiplayerState {
     }
   }, [])
 
+  const applyLobbyRow = useCallback(
+    (row: { code: string; host_id: string; variant: MultiplayerVariant; phase: Lobby['phase'] }) => {
+      setLobby((prev) =>
+        prev
+          ? { ...prev, variant: row.variant, phase: row.phase, hostId: row.host_id }
+          : prev,
+      )
+    },
+    [],
+  )
+
   const createLobby = useCallback(
     async (variant: MultiplayerVariant, name: string) => {
       const code = Math.random().toString(36).slice(2, 7).toUpperCase()
-      const newLobby = emptyLobby(code, name, variant)
+      const hostId = `host_${code}`
+      hostIdRef.current = hostId
+      const newLobby = emptyLobby(code, name, variant, hostId)
       if (!isMultiplayerEnabled || !supabase) {
+        setIsHost(true)
         setLobby(newLobby)
         return
       }
       const { error: insertError } = await supabase
         .from('lobbies')
-        .insert({ code, host_id: newLobby.hostId, variant })
+        .insert({ code, host_id: hostId, variant })
       if (insertError) {
         console.error('Failed to register lobby', insertError)
         throw new Error('Could not create lobby. Please try again.')
@@ -72,10 +92,18 @@ export function useMultiplayerState(): UseMultiplayerState {
           prev ? { ...prev, participants: participants.length ? participants : prev.participants } : prev,
         )
       })
+      channel.on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'lobbies', filter: `code=eq.${code}` },
+        (payload: RealtimePostgresChangesPayload<{ code: string; host_id: string; variant: MultiplayerVariant; phase: Lobby['phase'] }>) => {
+          if (payload.new) applyLobbyRow(payload.new as any)
+        },
+      )
       await channel.subscribe()
+      setIsHost(true)
       setLobby(newLobby)
     },
-    [],
+    [applyLobbyRow],
   )
 
   const joinLobby = useCallback(
@@ -91,15 +119,16 @@ export function useMultiplayerState(): UseMultiplayerState {
           sequence: generateSequence(4),
           progress: 0,
         }
-        const newLobby = emptyLobby(normalized, name, 'score')
+        const newLobby = emptyLobby(normalized, name, 'score', `host_${normalized}`)
         newLobby.participants = [participant]
+        setIsHost(false)
         setLobby(newLobby)
         return
       }
       // Invite-only: the lobby must exist (created and shared) before joining.
       const { data: existing, error: lookupError } = await supabase
         .from('lobbies')
-        .select('code')
+        .select('code, host_id, variant, phase')
         .eq('code', normalized)
         .maybeSingle()
       if (lookupError) {
@@ -122,19 +151,29 @@ export function useMultiplayerState(): UseMultiplayerState {
       channel.on('presence', { event: 'join' }, () => {
         void channel.track(participant)
       })
+      channel.on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'lobbies', filter: `code=eq.${normalized}` },
+        (payload: RealtimePostgresChangesPayload<{ code: string; host_id: string; variant: MultiplayerVariant; phase: Lobby['phase'] }>) => {
+          if (payload.new) applyLobbyRow(payload.new as any)
+        },
+      )
       await channel.subscribe()
       void channel.track(participant)
+      setIsHost(false)
       setLobby((prev) =>
         prev
           ? { ...prev, participants: [...prev.participants, participant] }
-          : emptyLobby(normalized, name, 'score'),
+          : emptyLobby(normalized, name, existing.variant, existing.host_id),
       )
     },
-    [],
+    [applyLobbyRow],
   )
 
   const leaveLobby = useCallback(() => {
     teardown()
+    setIsHost(false)
+    hostIdRef.current = null
     setLobby(null)
   }, [teardown])
 
@@ -149,6 +188,27 @@ export function useMultiplayerState(): UseMultiplayerState {
     }, 9000)
   }, [])
 
+  const updateVariant = useCallback(
+    async (variant: MultiplayerVariant) => {
+      if (!lobby) return
+      if (!isMultiplayerEnabled || !supabase) {
+        setLobby((prev) => (prev ? { ...prev, variant } : prev))
+        return
+      }
+      const { error } = await supabase
+        .from('lobbies')
+        .update({ variant })
+        .eq('code', lobby.code)
+      if (error) {
+        console.error('Failed to update lobby variant', error)
+        throw new Error('Could not change game mode. Please try again.')
+      }
+      // Optimistic update; Realtime will confirm.
+      setLobby((prev) => (prev ? { ...prev, variant } : prev))
+    },
+    [lobby],
+  )
+
   useEffect(() => teardown, [teardown])
 
   // Default mockup mode to true for local testing without Supabase, as requested.
@@ -158,9 +218,11 @@ export function useMultiplayerState(): UseMultiplayerState {
   return {
     enabled: isMockMode || isMultiplayerEnabled,
     lobby,
+    isHost,
     createLobby,
     joinLobby,
     leaveLobby,
     startGame,
+    updateVariant,
   }
 }

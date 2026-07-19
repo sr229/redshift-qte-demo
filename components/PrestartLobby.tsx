@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { PixelCard, PixelInput, PixelSelect, PixelButton, PixelAlert } from '@pxlkit/ui-kit'
 import type { MultiplayerVariant } from '../lib/types'
 
@@ -7,6 +7,8 @@ import { PxlKitIcon } from '@pxlkit/core'
 
 interface PrestartLobbyProps {
   enabled: boolean
+  defaultName?: string
+  prefillCode?: string
   onCreate: (variant: MultiplayerVariant, name: string) => void
   onJoin: (code: string, name: string) => void
   onBack: () => void
@@ -24,11 +26,24 @@ const VARIANT_HINT: Record<MultiplayerVariant, string> = {
   reaction: 'Reaction mode favors fast, precise inputs.',
 }
 
-export default function PrestartLobby({ enabled, onCreate, onJoin, onBack }: PrestartLobbyProps) {
-  const [name, setName] = useState('')
-  const [code, setCode] = useState('')
+export default function PrestartLobby({ enabled, defaultName, prefillCode, onCreate, onJoin, onBack }: PrestartLobbyProps) {
+  const [name, setName] = useState(defaultName ?? '')
+  const [code, setCode] = useState(prefillCode ?? '')
   const [variant, setVariant] = useState<MultiplayerVariant>('score')
   const [error, setError] = useState<string | null>(null)
+  const [joining, setJoining] = useState(false)
+
+  // Share-link flow: if a ?lobby=CODE was provided, attempt to join immediately.
+  useEffect(() => {
+    if (prefillCode && defaultName && !joining) {
+      setJoining(true)
+      void Promise.resolve(onJoin(prefillCode, defaultName)).catch((e: unknown) => {
+        setError(e instanceof Error ? e.message : 'Could not join lobby.')
+        setJoining(false)
+      })
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   if (!enabled) {
     return (
@@ -107,7 +122,7 @@ export default function PrestartLobby({ enabled, onCreate, onJoin, onBack }: Pre
               <PixelButton
                 tone="cyan"
                 className="flex-1"
-                disabled={!name || !code}
+                disabled={!name || !code || joining}
                 onClick={() => {
                   setError(null)
                   void Promise.resolve(onJoin(code, name)).catch((e: unknown) =>
@@ -115,7 +130,7 @@ export default function PrestartLobby({ enabled, onCreate, onJoin, onBack }: Pre
                   )
                 }}
               >
-                Join
+                {joining ? 'Joining…' : 'Join'}
               </PixelButton>
             </div>
 

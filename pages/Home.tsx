@@ -1,19 +1,27 @@
 import { useState, useEffect } from 'react'
-import { PixelButton, PixelSegmented, PixelAvatar, PixelBadge, PixelAlert } from '@pxlkit/ui-kit'
+import { PixelButton, PixelSegmented, PixelAvatar, PixelBadge, PixelAlert, PixelModal, PixelSelect } from '@pxlkit/ui-kit'
 import { PxlKitIcon } from '@pxlkit/core'
 import { Clock, SparkleSmall, Home as HomeIcon } from '@pxlkit/ui'
-import type { GameMode, MultiplayerParticipant } from '../lib/types'
+import type { GameMode, MultiplayerParticipant, MultiplayerVariant } from '../lib/types'
 import { useSingleplayerState } from '../hooks/useSingleplayerState'
 import { useMultiplayerState } from '../hooks/useMultiplayerState'
+import { useAuth } from '../hooks/useAuth'
 import GameplayWindow from '../components/GameplayWindow'
 import GameOverScreen from '../components/GameOverScreen'
 import PrestartLobby from '../components/PrestartLobby'
+import AuthScreen from '../components/AuthScreen'
 import ResultsLeaderboard from '../components/ResultsLeaderboard'
 import MultiplayerGameplay from '../components/multiplayer/MultiplayerGameplay'
 import CountdownScreen from '../components/CountdownScreen'
 
-type Screen = 'menu' | 'single' | 'multi'
+type Screen = 'menu' | 'single' | 'multi' | 'auth'
 type MenuTab = 'solo' | 'multi'
+
+const VARIANT_OPTIONS = [
+  { value: 'score', label: 'Timer (Score)' },
+  { value: 'elimination', label: 'Endless (Elimination)' },
+  { value: 'reaction', label: 'Timer (Reaction)' },
+]
 
 const MODE_OPTIONS = [
   { value: 'timer', label: 'TIMER' },
@@ -50,8 +58,25 @@ export default function Home() {
 
   const single = useSingleplayerState()
   const multi = useMultiplayerState()
+  const auth = useAuth()
 
   const [multiPrestartTimeLeft, setMultiPrestartTimeLeft] = useState(9000)
+  const [modeDialogOpen, setModeDialogOpen] = useState(false)
+  const [pendingVariant, setPendingVariant] = useState<MultiplayerVariant>(
+    multi.lobby?.variant ?? 'score',
+  )
+  const [modeDialogError, setModeDialogError] = useState<string | null>(null)
+
+  // Share-link support: ?lobby=CODE drops the user straight into the join flow.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const code = params.get('lobby')
+    if (code && auth.status === 'authenticated' && !multi.lobby) {
+      setScreen('multi')
+    }
+  }, [auth.status, multi.lobby])
+
+  const sharedLobbyCode = new URLSearchParams(window.location.search).get('lobby')
 
   useEffect(() => {
     if (multi.lobby?.phase === 'prestart') {
@@ -173,29 +198,35 @@ export default function Home() {
       }
 
       return (
-        <main className="flex min-h-screen flex-col items-center gap-4 px-4 py-8 md:py-12 bg-retro-bg">
+        <>
+          <main className="flex min-h-screen flex-col items-center gap-4 px-4 py-8 md:py-12 bg-retro-bg">
           <PxlKitIcon icon={SparkleSmall} size={28} className="text-retro-text" />
           <h1 className="font-pixel text-center text-2xl text-retro-text md:text-3xl">
             Lobby {multi.lobby.code}
           </h1>
 
           <section className="w-full max-w-5xl rounded-2xl border-2 border-retro-border bg-retro-surface p-4 md:p-8">
-            <div className="mx-auto mb-3 max-w-xl">
-              <PixelSegmented
-                value={mode}
-                options={MODE_OPTIONS}
-                onChange={(v) => setMode(v as GameMode)}
-              />
-            </div>
-            {mode !== 'endless' && (
-              <div className="mx-auto mb-6 max-w-xl">
-                <PixelSegmented
-                  value={lobbyWindowSeconds}
-                  options={WINDOW_OPTIONS}
-                  onChange={setLobbyWindowSeconds}
-                />
+            <div className="mx-auto mb-3 flex max-w-xl items-center justify-between gap-3">
+              <div className="flex flex-col">
+                <span className="font-pixel text-xs text-retro-text">Game Mode</span>
+                <span className="text-xs text-retro-muted">
+                  {VARIANT_OPTIONS.find((o) => o.value === multi.lobby!.variant)?.label ?? multi.lobby!.variant}
+                </span>
               </div>
-            )}
+              {multi.isHost && (
+                <PixelButton
+                  tone="neutral"
+                  variant="ghost"
+                  onClick={() => {
+                    setPendingVariant(multi.lobby?.variant ?? 'score')
+                    setModeDialogError(null)
+                    setModeDialogOpen(true)
+                  }}
+                >
+                  Change Mode
+                </PixelButton>
+              )}
+            </div>
 
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
               {slots.map((participant, i) => {
@@ -248,15 +279,73 @@ export default function Home() {
             </div>
           </section>
         </main>
+
+        <PixelModal
+          open={modeDialogOpen}
+          title="Change Game Mode"
+          description="Only the host can change the mode. This updates the lobby for everyone."
+          onClose={() => setModeDialogOpen(false)}
+          footer={
+            <>
+              <PixelButton
+                tone="neutral"
+                variant="ghost"
+                onClick={() => setModeDialogOpen(false)}
+              >
+                Cancel
+              </PixelButton>
+              <PixelButton
+                tone="green"
+                disabled={pendingVariant === multi.lobby?.variant}
+                onClick={async () => {
+                  setModeDialogError(null)
+                  try {
+                    await multi.updateVariant(pendingVariant)
+                    setModeDialogOpen(false)
+                  } catch (e) {
+                    setModeDialogError(e instanceof Error ? e.message : 'Could not change mode.')
+                  }
+                }}
+              >
+                Save Mode
+              </PixelButton>
+            </>
+          }
+        >
+          <div className="flex flex-col gap-3">
+            <PixelSelect
+              label="Game Mode"
+              options={VARIANT_OPTIONS}
+              value={pendingVariant}
+              onChange={(v) => setPendingVariant(v as MultiplayerVariant)}
+            />
+            {modeDialogError && (
+              <PixelAlert tone="red" label="Error" message={modeDialogError} />
+            )}
+          </div>
+        </PixelModal>
+        </>
       )
     }
 
     return (
       <PrestartLobby
         enabled={multi.enabled}
+        defaultName={auth.user?.name}
+        prefillCode={sharedLobbyCode ?? undefined}
         onCreate={(v, name) => void multi.createLobby(v, name)}
         onJoin={(code, name) => void multi.joinLobby(code, name)}
         onBack={() => setScreen('menu')}
+      />
+    )
+  }
+
+  // ── AUTH ────────────────────────────────────────────────────────────────
+  if (screen === 'auth') {
+    return (
+      <AuthScreen
+        disabled={auth.status === 'loading'}
+        onSignIn={(provider) => void auth.signIn(provider)}
       />
     )
   }
@@ -308,11 +397,29 @@ export default function Home() {
 
       {/* Options card — rounded rect matching the mockup */}
       {menuTab === 'multi' ? (
-        <PixelAlert
-          tone="neutral"
-          label="Coming soon"
-          message="Multiplayer mode is coming soon! stay tuned"
-        />
+        auth.status === 'authenticated' ? (
+          <PixelButton
+            id="btn-enter-multi"
+            tone="neutral"
+            size="lg"
+            className="w-full max-w-md"
+            iconLeft={<PxlKitIcon icon={Clock} size={16} />}
+            onClick={() => setScreen('multi')}
+          >
+            Enter Multiplayer
+          </PixelButton>
+        ) : (
+          <PixelButton
+            id="btn-multi-signin"
+            tone="neutral"
+            size="lg"
+            className="w-full max-w-md"
+            iconLeft={<PxlKitIcon icon={Clock} size={16} />}
+            onClick={() => setScreen('auth')}
+          >
+            Sign in to play Multiplayer
+          </PixelButton>
+        )
       ) : (
         <div className="w-full max-w-md rounded-2xl border-2 border-retro-border bg-retro-surface p-6">
           <div className="flex flex-col items-center gap-5">

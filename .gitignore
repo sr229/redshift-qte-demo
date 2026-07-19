@@ -42,3 +42,6 @@ dist-ssr
 
 # Node.js
 node_modules/
+
+# Typescript
+*.tsbuildinfo
