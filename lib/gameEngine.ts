@@ -72,12 +72,7 @@ export class GameEngine {
       failed: false,
     }
 
-    const lastTick = Date.now()
-    this.timerRef = setInterval(() => {
-      const now = Date.now()
-      const delta = now - lastTick
-      this.tick(delta)
-    }, 50)
+    this.beginTimer()
   }
 
   startImmediate(): void {
@@ -103,6 +98,20 @@ export class GameEngine {
       elapsedMs: 0,
       failed: false,
     }
+
+    this.beginTimer()
+  }
+
+  /** Start the engine's internal clock. Safe to call after the state is set. */
+  private beginTimer(): void {
+    this.clearTimer()
+    let lastTick = Date.now()
+    this.timerRef = setInterval(() => {
+      const now = Date.now()
+      const delta = now - lastTick
+      lastTick = now
+      this.tick(delta)
+    }, 50)
   }
 
   reset(): void {
