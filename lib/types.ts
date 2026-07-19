@@ -47,6 +47,10 @@ export interface Lobby {
   hostId: string
   participants: MultiplayerParticipant[]
   variant: MultiplayerVariant
+  /** Initial per-round window in seconds for timer-like variants (score/reaction). */
+  windowSeconds: number
+  /** Initial combo length for the first sequence of each round. */
+  sequenceLength: number
   phase: GamePhase
   /** Epoch ms when the host started the round; clients anchor their local
    *  countdown to this so everyone shares the same synchronized clock. */

@@ -1,8 +1,8 @@
 import { useState, useEffect, useRef } from 'react'
-import { PixelButton, PixelSegmented, PixelAvatar, PixelBadge, PixelAlert, PixelModal, PixelSelect } from '@pxlkit/ui-kit'
+import { PixelButton, PixelSegmented, PixelAvatar, PixelBadge } from '@pxlkit/ui-kit'
 import { PxlKitIcon } from '@pxlkit/core'
 import { Clock, SparkleSmall, Home as HomeIcon, Copy } from '@pxlkit/ui'
-import type { GameMode, MultiplayerVariant } from '../lib/types'
+import type { GameMode } from '../lib/types'
 import { useSingleplayerState } from '../hooks/useSingleplayerState'
 import { useMultiplayerState } from '../hooks/useMultiplayerState'
 import { useLeaderboard } from '../hooks/useLeaderboard'
@@ -11,6 +11,7 @@ import { submitTelemetry } from '../lib/telemetrySubmission'
 import GameplayWindow from '../components/GameplayWindow'
 import GameOverScreen from '../components/GameOverScreen'
 import PrestartLobby from '../components/PrestartLobby'
+import MatchSettingsDialog from '../components/MatchSettingsDialog'
 import AuthScreen from '../components/AuthScreen'
 import ResultsLeaderboard from '../components/ResultsLeaderboard'
 import MultiplayerGameplay from '../components/multiplayer/MultiplayerGameplay'
@@ -18,12 +19,6 @@ import CountdownScreen from '../components/CountdownScreen'
 
 type Screen = 'menu' | 'single' | 'multi' | 'auth'
 type MenuTab = 'solo' | 'multi'
-
-const VARIANT_OPTIONS = [
-  { value: 'score', label: 'Timer (Score)' },
-  { value: 'elimination', label: 'Endless (Elimination)' },
-  { value: 'reaction', label: 'Timer (Reaction)' },
-]
 
 const MODE_OPTIONS = [
   { value: 'timer', label: 'TIMER' },
@@ -73,11 +68,12 @@ export default function Home() {
   const auth = useAuth()
 
   const [multiPrestartTimeLeft, setMultiPrestartTimeLeft] = useState(9000)
-  const [modeDialogOpen, setModeDialogOpen] = useState(false)
-  const [pendingVariant, setPendingVariant] = useState<MultiplayerVariant>(
-    multi.lobby?.variant ?? 'score',
-  )
-  const [modeDialogError, setModeDialogError] = useState<string | null>(null)
+  // Match-settings dialog: used both for configuring a freshly created lobby
+  // and for the host to edit settings later. `dialogMode` distinguishes intent.
+  const [settingsDialogOpen, setSettingsDialogOpen] = useState(false)
+  const [settingsDialogMode, setSettingsDialogMode] = useState<'create' | 'edit'>('create')
+  const [settingsDialogError, setSettingsDialogError] = useState<string | null>(null)
+  const [settingsSaving, setSettingsSaving] = useState(false)
   const [copied, setCopied] = useState(false)
 
   // Share-link support: ?lobby=CODE drops the user straight into the join flow.
@@ -242,7 +238,13 @@ export default function Home() {
               <div className="flex flex-col">
                 <span className="font-pixel text-xs text-retro-text">Game Mode</span>
                 <span className="text-xs text-retro-muted">
-                  {VARIANT_OPTIONS.find((o) => o.value === multi.lobby!.variant)?.label ?? multi.lobby!.variant}
+                  {multi.lobby!.variant === 'elimination'
+                    ? 'Endless (Elimination)'
+                    : multi.lobby!.variant === 'reaction'
+                      ? 'Timer (Reaction)'
+                      : 'Timer (Score)'}
+                  {multi.lobby!.variant !== 'elimination' &&
+                    ` · ${multi.lobby!.windowSeconds}s · ${multi.lobby!.sequenceLength}-combo`}
                 </span>
               </div>
               {multi.isHost && (
@@ -250,12 +252,12 @@ export default function Home() {
                   tone="neutral"
                   variant="solid"
                   onClick={() => {
-                    setPendingVariant(multi.lobby?.variant ?? 'score')
-                    setModeDialogError(null)
-                    setModeDialogOpen(true)
+                    setSettingsDialogMode('edit')
+                    setSettingsDialogError(null)
+                    setSettingsDialogOpen(true)
                   }}
                 >
-                  Change Mode
+                  Match Settings
                 </PixelButton>
               )}
             </div>
@@ -309,50 +311,40 @@ export default function Home() {
           </section>
         </main>
 
-        <PixelModal
-          open={modeDialogOpen}
-          title="Change Game Mode"
-          description="Only the host can change the mode. This updates the lobby for everyone."
-          onClose={() => setModeDialogOpen(false)}
-          footer={
-            <>
-              <PixelButton
-                tone="neutral"
-                variant="solid"
-                onClick={() => setModeDialogOpen(false)}
-              >
-                Cancel
-              </PixelButton>
-              <PixelButton
-                tone="green"
-                disabled={pendingVariant === multi.lobby?.variant}
-                onClick={async () => {
-                  setModeDialogError(null)
-                  try {
-                    await multi.updateVariant(pendingVariant)
-                    setModeDialogOpen(false)
-                  } catch (e) {
-                    setModeDialogError(e instanceof Error ? e.message : 'Could not change mode.')
-                  }
-                }}
-              >
-                Save Mode
-              </PixelButton>
-            </>
+        <MatchSettingsDialog
+          open={settingsDialogOpen}
+          title={settingsDialogMode === 'create' ? 'Set Match Parameters' : 'Match Settings'}
+          description={
+            settingsDialogMode === 'create'
+              ? 'Configure the mode and initial parameters for your lobby.'
+              : 'Only the host can change the match settings. This updates the lobby for everyone.'
           }
-        >
-          <div className="flex flex-col gap-3">
-            <PixelSelect
-              label="Game Mode"
-              options={VARIANT_OPTIONS}
-              value={pendingVariant}
-              onChange={(v) => setPendingVariant(v as MultiplayerVariant)}
-            />
-            {modeDialogError && (
-              <PixelAlert tone="red" label="Error" message={modeDialogError} />
-            )}
-          </div>
-        </PixelModal>
+          initialVariant={multi.lobby?.variant ?? 'score'}
+          initialWindowSeconds={multi.lobby?.windowSeconds ?? 5}
+          initialSequenceLength={multi.lobby?.sequenceLength ?? 4}
+          disabled={settingsSaving}
+          error={settingsDialogError}
+          onClose={() => {
+            // In create mode, backing out of settings leaves an unconfigured
+            // lobby; return to the prestart screen so the host can re-open it.
+            setSettingsDialogOpen(false)
+          }}
+          onConfirm={async (variant, windowSeconds, sequenceLength) => {
+            setSettingsSaving(true)
+            setSettingsDialogError(null)
+            try {
+              await multi.updateVariant(variant)
+              await multi.updateSettings(windowSeconds, sequenceLength)
+              setSettingsDialogOpen(false)
+            } catch (e) {
+              setSettingsDialogError(
+                e instanceof Error ? e.message : 'Could not save match settings.',
+              )
+            } finally {
+              setSettingsSaving(false)
+            }
+          }}
+        />
         </>
       )
     }
@@ -362,7 +354,15 @@ export default function Home() {
         enabled={multi.enabled}
         defaultName={auth.user?.name}
         prefillCode={sharedLobbyCode ?? undefined}
-        onCreate={(v, name) => void multi.createLobby(v, name)}
+        onCreate={(name) => {
+          // Create the lobby with default settings, then open the match-settings
+          // dialog so the host configures mode + parameters before anyone joins.
+          void multi.createLobby('score', name, 5, 4).then(() => {
+            setSettingsDialogMode('create')
+            setSettingsDialogError(null)
+            setSettingsDialogOpen(true)
+          })
+        }}
         onJoin={(code, name) => void multi.joinLobby(code, name)}
         onBack={() => setScreen('menu')}
       />

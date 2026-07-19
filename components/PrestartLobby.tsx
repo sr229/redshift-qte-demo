@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react'
-import { PixelCard, PixelInput, PixelSelect, PixelButton, PixelAlert } from '@pxlkit/ui-kit'
-import type { MultiplayerVariant } from '../lib/types'
+import { PixelCard, PixelInput, PixelButton, PixelAlert } from '@pxlkit/ui-kit'
 
 import { Home as HomeIcon } from '@pxlkit/ui'
 import { PxlKitIcon } from '@pxlkit/core'
@@ -9,27 +8,14 @@ interface PrestartLobbyProps {
   enabled: boolean
   defaultName?: string
   prefillCode?: string
-  onCreate: (variant: MultiplayerVariant, name: string) => void
+  onCreate: (name: string) => void
   onJoin: (code: string, name: string) => void
   onBack: () => void
-}
-
-const VARIANT_OPTIONS = [
-  { value: 'score', label: 'Timer (Score)' },
-  { value: 'elimination', label: 'Endless (Elimination)' },
-  { value: 'reaction', label: 'Timer (Reaction)' },
-]
-
-const VARIANT_HINT: Record<MultiplayerVariant, string> = {
-  score: 'Timer mode rewards consistency under pressure.',
-  elimination: 'Endless mode decreases the time between codes!',
-  reaction: 'Reaction mode favors fast, precise inputs.',
 }
 
 export default function PrestartLobby({ enabled, defaultName, prefillCode, onCreate, onJoin, onBack }: PrestartLobbyProps) {
   const [name, setName] = useState(defaultName ?? '')
   const [code, setCode] = useState(prefillCode ?? '')
-  const [variant, setVariant] = useState<MultiplayerVariant>('score')
   const [error, setError] = useState<string | null>(null)
   const [joining, setJoining] = useState(false)
 
@@ -86,13 +72,6 @@ export default function PrestartLobby({ enabled, defaultName, prefillCode, onCre
               onChange={(e) => setName(e.target.value)}
               placeholder="Enter runner name..."
             />
-
-            <PixelSelect
-              label="Game Variant"
-              options={VARIANT_OPTIONS}
-              value={variant}
-              onChange={(v) => setVariant(v as MultiplayerVariant)}
-            />
           </div>
 
           <div className="flex flex-col gap-3 sm:flex-row">
@@ -102,7 +81,7 @@ export default function PrestartLobby({ enabled, defaultName, prefillCode, onCre
               disabled={!name}
               onClick={() => {
                 setError(null)
-                void onCreate(variant, name)
+                void onCreate(name)
               }}
             >
               Create Lobby
@@ -153,7 +132,8 @@ export default function PrestartLobby({ enabled, defaultName, prefillCode, onCre
       </PixelCard>
 
       <div className="w-full max-w-xl text-center text-xs text-retro-muted">
-        {VARIANT_HINT[variant]}
+        Create a lobby to host, or join a friend's with their invite code. You'll
+        set the match mode and parameters next.
       </div>
     </div>
   )

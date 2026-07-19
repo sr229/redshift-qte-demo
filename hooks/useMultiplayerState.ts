@@ -15,12 +15,19 @@ export interface UseMultiplayerState {
   isHost: boolean
   /** Id of the local participant within the active lobby, if joined. */
   localParticipantId: string | null
-  createLobby: (variant: MultiplayerVariant, name: string) => Promise<void>
+  createLobby: (
+    variant: MultiplayerVariant,
+    name: string,
+    windowSeconds?: number,
+    sequenceLength?: number,
+  ) => Promise<void>
   joinLobby: (code: string, name: string) => Promise<void>
   leaveLobby: () => void
   startGame: () => void
   /** Host-only: change the lobby's game mode. */
   updateVariant: (variant: MultiplayerVariant) => Promise<void>
+  /** Host-only: change the lobby's match settings (window + combo length). */
+  updateSettings: (windowSeconds: number, sequenceLength: number) => Promise<void>
   /** Host-only: persist final standings and broadcast gameover. */
   submitResults: () => Promise<void>
   /** Broadcast the local participant's latest state to the lobby via presence. */
@@ -29,12 +36,21 @@ export interface UseMultiplayerState {
   endRound: () => Promise<void>
 }
 
-function emptyLobby(code: string, hostName: string, variant: MultiplayerVariant, hostId: string): Lobby {
+function emptyLobby(
+  code: string,
+  hostName: string,
+  variant: MultiplayerVariant,
+  hostId: string,
+  windowSeconds = 5,
+  sequenceLength = 4,
+): Lobby {
   return {
     id: `lobby_${code}`,
     code,
     hostId,
     variant,
+    windowSeconds,
+    sequenceLength,
     phase: 'idle',
     startedAt: null,
     participants: [
@@ -70,6 +86,8 @@ export function useMultiplayerState(): UseMultiplayerState {
         code: string
         host_id: string
         variant: MultiplayerVariant
+        window_seconds?: number | null
+        sequence_length?: number | null
         phase: Lobby['phase']
         started_at?: string | null
       },
@@ -79,6 +97,8 @@ export function useMultiplayerState(): UseMultiplayerState {
           ? {
               ...prev,
               variant: row.variant,
+              windowSeconds: row.window_seconds ?? prev.windowSeconds,
+              sequenceLength: row.sequence_length ?? prev.sequenceLength,
               phase: row.phase,
               hostId: row.host_id,
               startedAt: row.started_at ? Date.parse(row.started_at) : prev.startedAt,
@@ -90,11 +110,16 @@ export function useMultiplayerState(): UseMultiplayerState {
   )
 
   const createLobby = useCallback(
-    async (variant: MultiplayerVariant, name: string) => {
+    async (
+      variant: MultiplayerVariant,
+      name: string,
+      windowSeconds = 5,
+      sequenceLength = 4,
+    ) => {
       const code = Math.random().toString(36).slice(2, 7).toUpperCase()
       const hostId = `host_${code}`
       hostIdRef.current = hostId
-      const newLobby = emptyLobby(code, name, variant, hostId)
+      const newLobby = emptyLobby(code, name, variant, hostId, windowSeconds, sequenceLength)
       if (!isMultiplayerEnabled || !supabase) {
         setIsHost(true)
         setLobby(newLobby)
@@ -103,7 +128,7 @@ export function useMultiplayerState(): UseMultiplayerState {
       // Create the lobby through the Edge Function (service_role) so the code
       // is collision-free and anon clients can't write directly to `lobbies`.
       const { data, error: fnError } = await supabase.functions.invoke('createLobby', {
-        body: { hostId, hostName: name, variant },
+        body: { hostId, hostName: name, variant, windowSeconds, sequenceLength },
       })
       if (fnError || !data?.ok) {
         console.error('Failed to create lobby', fnError ?? data)
@@ -123,7 +148,7 @@ export function useMultiplayerState(): UseMultiplayerState {
       channel.on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'lobbies', filter: `code=eq.${code}` },
-        (payload: RealtimePostgresChangesPayload<{ code: string; host_id: string; variant: MultiplayerVariant; phase: Lobby['phase']; started_at?: string | null }>) => {
+        (payload: RealtimePostgresChangesPayload<{ code: string; host_id: string; variant: MultiplayerVariant; window_seconds?: number | null; sequence_length?: number | null; phase: Lobby['phase']; started_at?: string | null }>) => {
           if (payload.new) applyLobbyRow(payload.new as any)
         },
       )
@@ -157,7 +182,7 @@ export function useMultiplayerState(): UseMultiplayerState {
       // Invite-only: the lobby must exist (created and shared) before joining.
       const { data: existing, error: lookupError } = await supabase
         .from('lobbies')
-        .select('code, host_id, variant, phase')
+        .select('code, host_id, variant, window_seconds, sequence_length, phase')
         .eq('code', normalized)
         .maybeSingle()
       if (lookupError) {
@@ -183,7 +208,7 @@ export function useMultiplayerState(): UseMultiplayerState {
       channel.on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'lobbies', filter: `code=eq.${normalized}` },
-        (payload: RealtimePostgresChangesPayload<{ code: string; host_id: string; variant: MultiplayerVariant; phase: Lobby['phase']; started_at?: string | null }>) => {
+        (payload: RealtimePostgresChangesPayload<{ code: string; host_id: string; variant: MultiplayerVariant; window_seconds?: number | null; sequence_length?: number | null; phase: Lobby['phase']; started_at?: string | null }>) => {
           if (payload.new) applyLobbyRow(payload.new as any)
         },
       )
@@ -194,7 +219,14 @@ export function useMultiplayerState(): UseMultiplayerState {
       setLobby((prev) =>
         prev
           ? { ...prev, participants: [...prev.participants, participant] }
-          : emptyLobby(normalized, name, existing.variant, existing.host_id),
+          : emptyLobby(
+              normalized,
+              name,
+              existing.variant,
+              existing.host_id,
+              existing.window_seconds ?? 5,
+              existing.sequence_length ?? 4,
+            ),
       )
     },
     [applyLobbyRow],
@@ -290,6 +322,30 @@ export function useMultiplayerState(): UseMultiplayerState {
     [lobby],
   )
 
+  const updateSettings = useCallback(
+    async (windowSeconds: number, sequenceLength: number) => {
+      if (!lobby) return
+      if (!isMultiplayerEnabled || !supabase) {
+        setLobby((prev) =>
+          prev ? { ...prev, windowSeconds, sequenceLength } : prev,
+        )
+        return
+      }
+      // Route through the Edge Function so host authorization is enforced and
+      // anon clients (SELECT-only on `lobbies`) can't change settings directly.
+      const { error: fnError } = await supabase.functions.invoke('changeMode', {
+        body: { code: lobby.code, hostId: hostIdRef.current, windowSeconds, sequenceLength },
+      })
+      if (fnError) {
+        console.error('Failed to change match settings', fnError)
+        throw new Error('Could not change match settings. Please try again.')
+      }
+      // Optimistic update; Realtime will confirm.
+      setLobby((prev) => (prev ? { ...prev, windowSeconds, sequenceLength } : prev))
+    },
+    [lobby],
+  )
+
   useEffect(() => teardown, [teardown])
 
   const trackLocal = useCallback(
@@ -324,6 +380,7 @@ export function useMultiplayerState(): UseMultiplayerState {
     leaveLobby,
     startGame,
     updateVariant,
+    updateSettings,
     submitResults,
     trackLocal,
     endRound,

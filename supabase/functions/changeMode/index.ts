@@ -22,10 +22,17 @@ type Variant = (typeof VARIANTS)[number]
 const PHASES = ['idle', 'prestart', 'playing', 'gameover'] as const
 type Phase = (typeof PHASES)[number]
 
+const WINDOWS = [5, 10, 15] as const
+const LENGTHS = [4, 6, 8] as const
+
 interface ChangeModeBody {
   code: string
   hostId: string
   variant?: string
+  /** Initial per-round window (seconds) for timer-like variants. */
+  windowSeconds?: number
+  /** Initial combo length for the first sequence of a round. */
+  sequenceLength?: number
   phase?: string
   /** ISO timestamp set by the host when the round starts; clients anchor their
    *  local countdown to this so all players share a synchronized clock. */
@@ -63,7 +70,7 @@ Deno.serve(async (req: Request) => {
     })
   }
 
-  const { code, hostId, variant, phase, startedAt } = body
+  const { code, hostId, variant, windowSeconds, sequenceLength, phase, startedAt } = body
   if (!code || !hostId) {
     return new Response(
       JSON.stringify({ ok: false, error: 'code and hostId are required' }),
@@ -80,6 +87,24 @@ Deno.serve(async (req: Request) => {
       )
     }
     update.variant = variant
+  }
+  if (windowSeconds !== undefined) {
+    if (!WINDOWS.includes(windowSeconds as (typeof WINDOWS)[number])) {
+      return new Response(
+        JSON.stringify({ ok: false, error: 'Invalid windowSeconds' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+      )
+    }
+    update.window_seconds = windowSeconds
+  }
+  if (sequenceLength !== undefined) {
+    if (!LENGTHS.includes(sequenceLength as (typeof LENGTHS)[number])) {
+      return new Response(
+        JSON.stringify({ ok: false, error: 'Invalid sequenceLength' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+      )
+    }
+    update.sequence_length = sequenceLength
   }
   if (phase !== undefined) {
     if (!PHASES.includes(phase as Phase)) {

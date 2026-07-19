@@ -18,10 +18,15 @@ const corsHeaders = {
 const VARIANTS = ['score', 'elimination', 'reaction'] as const
 type Variant = (typeof VARIANTS)[number]
 
+const WINDOWS = [5, 10, 15] as const
+const LENGTHS = [4, 6, 8] as const
+
 interface CreateBody {
   hostId: string
   hostName: string
   variant: string
+  windowSeconds?: number
+  sequenceLength?: number
 }
 
 function randomCode(): string {
@@ -59,13 +64,19 @@ Deno.serve(async (req: Request) => {
     })
   }
 
-  const { hostId, hostName, variant } = body
+  const { hostId, hostName, variant, windowSeconds, sequenceLength } = body
   if (!hostId || !hostName || !VARIANTS.includes(variant as Variant)) {
     return new Response(
       JSON.stringify({ ok: false, error: 'Invalid payload' }),
       { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
     )
   }
+  const window = WINDOWS.includes(windowSeconds as (typeof WINDOWS)[number])
+    ? (windowSeconds as number)
+    : 5
+  const length = LENGTHS.includes(sequenceLength as (typeof LENGTHS)[number])
+    ? (sequenceLength as number)
+    : 4
 
   const supabase = createClient(supabaseUrl, serviceRoleKey, {
     auth: { persistSession: false },
@@ -77,7 +88,13 @@ Deno.serve(async (req: Request) => {
     const candidate = randomCode()
     const { error } = await supabase
       .from('lobbies')
-      .insert({ code: candidate, host_id: hostId, variant })
+      .insert({
+        code: candidate,
+        host_id: hostId,
+        variant,
+        window_seconds: window,
+        sequence_length: length,
+      })
     if (!error) {
       code = candidate
       break
@@ -99,7 +116,7 @@ Deno.serve(async (req: Request) => {
   }
 
   return new Response(
-    JSON.stringify({ ok: true, code, hostId, variant }),
+    JSON.stringify({ ok: true, code, hostId, variant, windowSeconds: window, sequenceLength: length }),
     { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
   )
 })

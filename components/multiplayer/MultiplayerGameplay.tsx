@@ -39,7 +39,6 @@ const DEFAULT_STEPS: QteDirection[] = ['up', 'right', 'down', 'down', 'down']
 // Multiplayer variants map onto the singleplayer modes:
 //   'score' / 'reaction' -> singleplayer 'timer'   (fixed clock, no ramp, wrong input resets progress only)
 //   'elimination'        -> singleplayer 'endless' (decaying clock, growing sequences, wrong input drains clock)
-const SEQUENCE_BASE_LENGTH = 4
 
 /** Sidebar row per participant — matches MP.png layout */
 function ParticipantRow({ participant }: { participant: MultiplayerParticipant }) {
@@ -102,12 +101,15 @@ export default function MultiplayerGameplay({ lobby, localParticipantId, onLeave
         name: 'You',
         score: 0,
         alive: true,
-        sequence: { id: 'initial', steps: DEFAULT_STEPS },
+        sequence: null,
         progress: 0,
       }
+    // Seed an initial sequence of the lobby's configured combo length so the
+    // first round honors the host's match settings.
+    const initialSequence = orig.sequence ?? generateSequence(lobby.sequenceLength)
     return {
       ...orig,
-      sequence: orig.sequence || { id: 'initial', steps: DEFAULT_STEPS },
+      sequence: initialSequence,
     }
   })
 
@@ -115,10 +117,12 @@ export default function MultiplayerGameplay({ lobby, localParticipantId, onLeave
   const opponents = lobby.participants.filter((p) => p.id !== localParticipant.id)
 
   const [timeLeftMs, setTimeLeftMs] = useState(
-    lobby.variant === 'elimination' ? ENDLESS_TIME_START_SECONDS * 1000 : 5000,
+    lobby.variant === 'elimination'
+      ? ENDLESS_TIME_START_SECONDS * 1000
+      : lobby.windowSeconds * 1000,
   )
   const [limitSeconds, setLimitSeconds] = useState(
-    lobby.variant === 'elimination' ? ENDLESS_TIME_START_SECONDS : 5,
+    lobby.variant === 'elimination' ? ENDLESS_TIME_START_SECONDS : lobby.windowSeconds,
   )
   const [eliminated, setEliminated] = useState(false)
 
@@ -134,7 +138,9 @@ export default function MultiplayerGameplay({ lobby, localParticipantId, onLeave
   // The clock is anchored to the host's shared `startedAt` so every client counts
   // down from the same instant; only per-player mistake penalties are local.
   const timeLeftRef = useRef(
-    lobby.variant === 'elimination' ? ENDLESS_TIME_START_SECONDS * 1000 : 5000,
+    lobby.variant === 'elimination'
+      ? ENDLESS_TIME_START_SECONDS * 1000
+      : lobby.windowSeconds * 1000,
   )
   const penaltyRef = useRef(0)
   const limitSecondsRef = useRef(limitSeconds)
@@ -227,7 +233,7 @@ export default function MultiplayerGameplay({ lobby, localParticipantId, onLeave
           const completions = newScore
 
           // Difficulty ramp (#2 + #3): continuous timer decay and monotonic length growth.
-          const nextLength = endlessSequenceLength(completions, SEQUENCE_BASE_LENGTH)
+          const nextLength = endlessSequenceLength(completions, lobby.sequenceLength)
           if (lobby.variant === 'elimination') {
             const nextLimitSeconds = endlessTimeLimit(completions)
             setLimitSeconds(nextLimitSeconds)
@@ -267,7 +273,8 @@ export default function MultiplayerGameplay({ lobby, localParticipantId, onLeave
   const activeSequence = localParticipant.sequence?.steps ?? DEFAULT_STEPS
   const playersRemaining = list.filter((p) => p.alive).length
 
-  const clockDenominator = lobby.variant === 'elimination' ? limitSeconds * 1000 : 5000
+  const clockDenominator =
+    lobby.variant === 'elimination' ? limitSeconds * 1000 : lobby.windowSeconds * 1000
   const pct = Math.max(0, Math.min(100, (timeLeftMs / clockDenominator) * 100))
 
   const formatTime = (ms: number) => {
