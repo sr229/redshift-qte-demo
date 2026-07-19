@@ -72,13 +72,62 @@ export function useMultiplayerState(): UseMultiplayerState {
   const [localParticipantId, setLocalParticipantId] = useState<string | null>(null)
   const channelRef = useRef<RealtimeChannel | null>(null)
   const hostIdRef = useRef<string | null>(null)
+  const lobbyIdRef = useRef<string | null>(null)
+  const localParticipantRef = useRef<MultiplayerParticipant | null>(null)
+  const heartbeatRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   const teardown = useCallback(() => {
     if (channelRef.current) {
       void supabase?.removeChannel(channelRef.current)
       channelRef.current = null
     }
+    if (heartbeatRef.current) {
+      clearInterval(heartbeatRef.current)
+      heartbeatRef.current = null
+    }
   }, [])
+
+  // Upsert the local participant into the `lobby_participants` roster with a
+  // fresh heartbeat. The server prunes rows whose `updated_at` is stale (>30s)
+  // and uses the roster to drive auto-cleanup + host migration (migration 0006).
+  const upsertRoster = useCallback(() => {
+    const participant = localParticipantRef.current
+    const lobbyId = lobbyIdRef.current
+    if (!isMultiplayerEnabled || !supabase || !participant || !lobbyId) return
+    void supabase.from('lobby_participants').upsert(
+      {
+        lobby_id: lobbyId,
+        participant_id: participant.id,
+        name: participant.name,
+        score: participant.score,
+        alive: participant.alive,
+        progress: participant.progress,
+        sequence: participant.sequence,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: 'lobby_id,participant_id' },
+    )
+  }, [])
+
+  // Keep the roster heartbeat alive while connected so the server knows this
+  // client is still present. Runs every 15s, well under the 30s staleness window.
+  const startHeartbeat = useCallback(() => {
+    if (heartbeatRef.current) clearInterval(heartbeatRef.current)
+    upsertRoster()
+    heartbeatRef.current = setInterval(upsertRoster, 15_000)
+  }, [upsertRoster])
+
+  // Trigger immediate server-side reconciliation when the host is detected as
+  // gone. Any current participant may call this; the server re-derives the host
+  // from the roster and cleans up empty lobbies (see migrateHost edge function).
+  const triggerHostMigration = useCallback(() => {
+    const code = lobby?.code
+    const participantId = localParticipantId
+    if (!isMultiplayerEnabled || !supabase || !code || !participantId) return
+    void supabase.functions.invoke('migrateHost', {
+      body: { code, participantId },
+    })
+  }, [lobby?.code, localParticipantId])
 
   const applyLobbyRow = useCallback(
     (
@@ -105,8 +154,13 @@ export function useMultiplayerState(): UseMultiplayerState {
             }
           : prev,
       )
+      // Host migration: the server may have reassigned host_id (migration 0006).
+      // Keep local `isHost` in sync with the authoritative lobby host.
+      if (localParticipantId) {
+        setIsHost(row.host_id === localParticipantId)
+      }
     },
-    [],
+    [localParticipantId],
   )
 
   const createLobby = useCallback(
@@ -135,15 +189,30 @@ export function useMultiplayerState(): UseMultiplayerState {
         throw new Error('Could not create lobby. Please try again.')
       }
       const realCode: string = data.code ?? code
+      const realId: string | undefined = data.id
       newLobby.code = realCode
       const channel = supabase.channel(`lobby:${realCode}`)
       channelRef.current = channel
+      const hostParticipant: MultiplayerParticipant = {
+        id: hostId,
+        name,
+        score: 0,
+        alive: true,
+        sequence: null,
+        progress: 0,
+      }
+      localParticipantRef.current = hostParticipant
       channel.on('presence', { event: 'sync' }, () => {
         const state = channel.presenceState<MultiplayerParticipant>()
         const participants = Object.values(state).flat()
         setLobby((prev) =>
           prev ? { ...prev, participants: participants.length ? participants : prev.participants } : prev,
         )
+        // Host migration: if the authoritative host is no longer present in
+        // presence, ask the server to reassign the host from the roster.
+        if (lobby && lobby.hostId && !participants.some((p) => p.id === lobby.hostId)) {
+          triggerHostMigration()
+        }
       })
       channel.on(
         'postgres_changes',
@@ -153,11 +222,16 @@ export function useMultiplayerState(): UseMultiplayerState {
         },
       )
       await channel.subscribe()
+      // The host must also track presence so the server roster includes it and
+      // other clients can see it (previously only guests tracked).
+      void channel.track(hostParticipant)
+      if (realId) lobbyIdRef.current = realId
+      startHeartbeat()
       setIsHost(true)
       setLocalParticipantId(hostId)
       setLobby(newLobby)
     },
-    [applyLobbyRow],
+    [applyLobbyRow, triggerHostMigration, startHeartbeat],
   )
 
   const joinLobby = useCallback(
@@ -182,7 +256,7 @@ export function useMultiplayerState(): UseMultiplayerState {
       // Invite-only: the lobby must exist (created and shared) before joining.
       const { data: existing, error: lookupError } = await supabase
         .from('lobbies')
-        .select('code, host_id, variant, window_seconds, sequence_length, phase')
+        .select('id, code, host_id, variant, window_seconds, sequence_length, phase')
         .eq('code', normalized)
         .maybeSingle()
       if (lookupError) {
@@ -202,6 +276,19 @@ export function useMultiplayerState(): UseMultiplayerState {
         sequence: generateSequence(4),
         progress: 0,
       }
+      localParticipantRef.current = participant
+      channel.on('presence', { event: 'sync' }, () => {
+        const state = channel.presenceState<MultiplayerParticipant>()
+        const participants = Object.values(state).flat()
+        setLobby((prev) =>
+          prev ? { ...prev, participants: participants.length ? participants : prev.participants } : prev,
+        )
+        // Host migration: if the authoritative host is no longer present in
+        // presence, ask the server to reassign the host from the roster.
+        if (lobby && lobby.hostId && !participants.some((p) => p.id === lobby.hostId)) {
+          triggerHostMigration()
+        }
+      })
       channel.on('presence', { event: 'join' }, () => {
         void channel.track(participant)
       })
@@ -214,6 +301,8 @@ export function useMultiplayerState(): UseMultiplayerState {
       )
       await channel.subscribe()
       void channel.track(participant)
+      lobbyIdRef.current = existing.id
+      startHeartbeat()
       setIsHost(false)
       setLocalParticipantId(participant.id)
       setLobby((prev) =>
@@ -229,7 +318,7 @@ export function useMultiplayerState(): UseMultiplayerState {
             ),
       )
     },
-    [applyLobbyRow],
+    [applyLobbyRow, triggerHostMigration, startHeartbeat],
   )
 
   const submitResults = useCallback(async () => {
@@ -262,11 +351,30 @@ export function useMultiplayerState(): UseMultiplayerState {
     if (isHost && lobby && isMultiplayerEnabled && supabase) {
       void submitResults()
     }
+    // Remove our roster row so the server prunes us immediately (rather than
+    // waiting for the 30s heartbeat staleness window). If we were the host,
+    // trigger reconciliation so a new host is chosen from the remaining roster.
+    const lobbyId = lobbyIdRef.current
+    const participantId = localParticipantId
+    if (isMultiplayerEnabled && supabase && lobbyId && participantId) {
+      void supabase
+        .from('lobby_participants')
+        .delete()
+        .eq('lobby_id', lobbyId)
+        .eq('participant_id', participantId)
+      if (isHost) {
+        void supabase.functions.invoke('migrateHost', {
+          body: { code: lobby?.code, participantId },
+        })
+      }
+    }
     teardown()
     setIsHost(false)
     hostIdRef.current = null
+    lobbyIdRef.current = null
+    localParticipantRef.current = null
     setLobby(null)
-  }, [teardown, submitResults, isHost, lobby, isMultiplayerEnabled, supabase])
+  }, [teardown, submitResults, isHost, lobby, localParticipantId, isMultiplayerEnabled, supabase])
 
   const startGame = useCallback(() => {
     setLobby((prev) =>
@@ -350,6 +458,8 @@ export function useMultiplayerState(): UseMultiplayerState {
 
   const trackLocal = useCallback(
     (participant: MultiplayerParticipant) => {
+      // Keep the latest participant state so the heartbeat upsert stays current.
+      localParticipantRef.current = participant
       if (isMultiplayerEnabled && supabase && channelRef.current) {
         void channelRef.current.track(participant)
       }

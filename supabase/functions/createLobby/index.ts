@@ -84,9 +84,10 @@ Deno.serve(async (req: Request) => {
 
   // Retry until we land a unique code (collisions are rare with 5 base36 chars).
   let code: string | null = null
+  let lobbyId: string | null = null
   for (let attempt = 0; attempt < 5; attempt++) {
     const candidate = randomCode()
-    const { error } = await supabase
+    const { data, error } = await supabase
       .from('lobbies')
       .insert({
         code: candidate,
@@ -95,8 +96,11 @@ Deno.serve(async (req: Request) => {
         window_seconds: window,
         sequence_length: length,
       })
+      .select('id')
+      .single()
     if (!error) {
       code = candidate
+      lobbyId = data?.id ?? null
       break
     }
     // A unique-violation (23505) means the code already exists; try again.
@@ -116,7 +120,15 @@ Deno.serve(async (req: Request) => {
   }
 
   return new Response(
-    JSON.stringify({ ok: true, code, hostId, variant, windowSeconds: window, sequenceLength: length }),
+    JSON.stringify({
+      ok: true,
+      code,
+      id: lobbyId,
+      hostId,
+      variant,
+      windowSeconds: window,
+      sequenceLength: length,
+    }),
     { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
   )
 })

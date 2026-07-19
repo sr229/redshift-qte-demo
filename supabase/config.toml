@@ -45,3 +45,10 @@ enabled = false
 # permits anon inserts. JWT verification must be off so the anonymous CORS
 # preflight (OPTIONS, no Authorization header) is not rejected by the gateway.
 verify_jwt = false
+
+[functions.migrateHost]
+# Called directly from the browser (any current participant) to trigger
+# server-side host migration + lobby cleanup. Runs as service_role and verifies
+# the caller is a roster participant, so JWT verification is off to allow the
+# anonymous CORS preflight from the browser.
+verify_jwt = false
