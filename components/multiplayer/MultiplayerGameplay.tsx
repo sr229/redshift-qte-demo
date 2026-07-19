@@ -138,56 +138,66 @@ export default function MultiplayerGameplay({ lobby, localParticipantId, onLeave
   // (kept out of the gameplay HUD); it is surfaced only on the results screen.
   const telemetry = useTelemetry()
 
-  // Refs backing the match clock so mistake penalties stick and the timer can read the
-  // latest limit without restarting the interval.
-  // The clock is anchored to the host's shared `startedAt` so every client counts
-  // down from the same instant; only per-player mistake penalties are local.
+  // Refs backing the match clock. Timer-like variants (score/reaction) anchor to
+  // the host's shared `startedAt` so every client counts down from the same
+  // instant. Elimination mode gives each player their OWN local clock (mirroring
+  // singleplayer endless): it decrements by real elapsed time, resets to the new
+  // (shorter) limit on each sequence completion, and drains on mistakes. Only
+  // per-player mistake penalties are local.
   const timeLeftRef = useRef(
     lobby.variant === 'elimination'
       ? ENDLESS_TIME_START_SECONDS * 1000
       : lobby.windowSeconds * 1000,
   )
-  const penaltyRef = useRef(0)
+  const lastTickRef = useRef<number>(Date.now())
   const limitSecondsRef = useRef(limitSeconds)
   const eliminatedRef = useRef(false)
   useEffect(() => {
     limitSecondsRef.current = limitSeconds
   }, [limitSeconds])
 
-  // Match timer — ticks locally but is anchored to the host's `startedAt` so all
-  // players share a synchronized clock. Timer-like variants (score/reaction) run a
-  // single fixed clock; the endless-like variant (elimination) uses a continuously
-  // decaying clock and ends in elimination. Per-player mistake penalties are applied
-  // locally on top of the shared baseline.
+  // Match timer. Timer-like variants run a single fixed clock anchored to the
+  // host's `startedAt`. Elimination mode runs each player's own local clock that
+  // decays continuously and ends in elimination. The local clock ending ends the
+  // round ONLY for the local player (eliminated or last standing) — it never
+  // broadcasts gameover to others.
   useEffect(() => {
     if (lobby.phase !== 'playing') return
-    const baseLimitMs =
-      lobby.variant === 'elimination' ? limitSecondsRef.current * 1000 : 5000
+    const isElimination = lobby.variant === 'elimination'
+    const baseLimitMs = isElimination ? limitSecondsRef.current * 1000 : 5000
     const computeTimeLeft = () => {
+      if (isElimination) {
+        // Own clock: decrement by real elapsed time since the last tick.
+        const now = Date.now()
+        const delta = now - lastTickRef.current
+        lastTickRef.current = now
+        timeLeftRef.current = Math.max(0, timeLeftRef.current - delta)
+        return timeLeftRef.current
+      }
+      // Shared clock: anchored to the host's start instant.
       const elapsed = lobby.startedAt ? Date.now() - lobby.startedAt : 0
-      return Math.max(0, baseLimitMs - elapsed - penaltyRef.current)
+      return Math.max(0, baseLimitMs - elapsed)
     }
-    timeLeftRef.current = computeTimeLeft()
+    lastTickRef.current = Date.now()
     setTimeLeftMs(timeLeftRef.current)
     telemetry.start()
     const interval = setInterval(() => {
       const next = computeTimeLeft()
-      timeLeftRef.current = next
       telemetry.tick()
       if (next <= 0) {
-        if (lobby.variant === 'elimination') {
-          // Clock ran out: the local player is eliminated.
+        telemetry.stop()
+        onTelemetry?.(telemetry.telemetry)
+        clearInterval(interval)
+        if (isElimination) {
+          // Own clock ran out: the local player is eliminated. This ends the
+          // round for the local client only; other players keep going.
           eliminatedRef.current = true
           setEliminated(true)
           setLocalParticipant((prev) => ({ ...prev, alive: false }))
           trackLocal({ ...localParticipantRef.current, alive: false })
         }
-        telemetry.stop()
-        onTelemetry?.(telemetry.telemetry)
-        clearInterval(interval)
-        // The local clock ending ends the round. Only the host actually
-        // persists standings + broadcasts gameover; non-hosts are no-ops and
-        // will receive the gameover phase via Realtime.
+        // Timer-like variants: the host broadcasts gameover for everyone. For
+        // elimination, endRound flips the local phase directly (no broadcast).
         endRound()
       }
       setTimeLeftMs(next)
@@ -211,9 +221,9 @@ export default function MultiplayerGameplay({ lobby, localParticipantId, onLeave
           // Only the endless-like (elimination) variant drains the clock on a
           // mistake, mirroring singleplayer 'endless'. Timer-like variants just
           // reset progress without a time penalty (singleplayer 'timer'). The
-          // penalty is local (per-player) and layered on the shared baseline.
+          // penalty is applied directly against the local clock, matching the
+          // singleplayer implementation (it is consumed on the reset).
           if (lobby.variant === 'elimination') {
-            penaltyRef.current += ENDLESS_MISTAKE_PENALTY_SECONDS * 1000
             const penalized = Math.max(0, timeLeftRef.current - ENDLESS_MISTAKE_PENALTY_SECONDS * 1000)
             timeLeftRef.current = penalized
             setTimeLeftMs(penalized)
@@ -240,9 +250,9 @@ export default function MultiplayerGameplay({ lobby, localParticipantId, onLeave
           if (lobby.variant === 'elimination') {
             const nextLimitSeconds = endlessTimeLimit(completions)
             setLimitSeconds(nextLimitSeconds)
-            // Re-anchor the shared baseline to the new (shorter) limit; the local
-            // penalty carries over so accumulated mistakes still count.
-            timeLeftRef.current = nextLimitSeconds * 1000 - penaltyRef.current
+            // Reset the local clock to the new (shorter) limit, mirroring
+            // singleplayer endless — the clock is the player's own resource.
+            timeLeftRef.current = nextLimitSeconds * 1000
             setTimeLeftMs(timeLeftRef.current)
           }
 
@@ -271,6 +281,8 @@ export default function MultiplayerGameplay({ lobby, localParticipantId, onLeave
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [handleInput])
+
+  // Elimination mode: the local player wins when they are the last one standing.\n  // End the round for the local client (no host broadcast) so other players'\n  // rounds aren't cut short.\n  useEffect(() => {\n    if (lobby.phase !== 'playing' || lobby.variant !== 'elimination') return\n    if (eliminatedRef.current) return\n    const list = [localParticipant, ...opponents]\n    const aliveCount = list.filter((p) => p.alive).length\n    if (aliveCount <= 1 && localParticipant.alive) {\n      telemetry.stop()\n      onTelemetry?.(telemetry.telemetry)\n      endRound()\n    }\n  }, [lobby.phase, lobby.variant, localParticipant, opponents, telemetry, onTelemetry, endRound])
 
   const list = [localParticipant, ...opponents]
   const activeSequence = localParticipant.sequence?.steps ?? DEFAULT_STEPS

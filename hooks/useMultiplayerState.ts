@@ -333,7 +333,7 @@ export function useMultiplayerState(): UseMultiplayerState {
     }
     if (!isHost) return
     // Persist final standings so the results screen can read them after
-    // presence participants disconnect, then broadcast the gameover phase.
+    // presence participants disconnect.
     const { error: fnError } = await supabase.functions.invoke('submitStateToLeaderboard', {
       body: {
         code: lobby.code,
@@ -349,9 +349,14 @@ export function useMultiplayerState(): UseMultiplayerState {
     if (fnError) {
       console.error('Failed to submit leaderboard', fnError)
     }
-    await supabase.functions.invoke('changeMode', {
-      body: { code: lobby.code, hostId: hostIdRef.current, phase: 'gameover' },
-    })
+    // Timer-like variants: the host broadcasts gameover so every client ends
+    // together. Elimination mode ends per-client (eliminated / last standing),
+    // so the host must NOT broadcast — that would cut other players' rounds short.
+    if (lobby.variant !== 'elimination') {
+      await supabase.functions.invoke('changeMode', {
+        body: { code: lobby.code, hostId: hostIdRef.current, phase: 'gameover' },
+      })
+    }
   }, [lobby, isHost])
 
   const leaveLobby = useCallback(() => {
@@ -479,10 +484,21 @@ export function useMultiplayerState(): UseMultiplayerState {
   // non-hosts simply stop (they'll receive the gameover phase via Realtime).
   const endRound = useCallback(async () => {
     if (!lobby) return
+    if (lobby.variant === 'elimination') {
+      // Elimination mode ends per-client: the local player is eliminated or is
+      // the last one standing. Flip the local phase directly rather than relying
+      // on a host broadcast (which would cut other players' rounds short). The
+      // host still persists standings for the results screen.
+      setLobby((prev) => (prev ? { ...prev, phase: 'gameover' } : prev))
+      if (isHost && isMultiplayerEnabled && supabase) {
+        await submitResults()
+      }
+      return
+    }
     if (isHost) {
       await submitResults()
     }
-  }, [lobby, isHost, submitResults])
+  }, [lobby, isHost, submitResults, isMultiplayerEnabled, supabase])
 
   // Multiplayer is enabled only when a real Supabase backend is configured.
   // Set VITE_MOCK_MODE=true to force-enable the UI without a backend (mock data).

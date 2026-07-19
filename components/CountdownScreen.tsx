@@ -17,27 +17,30 @@ function getModeInfo(mode: GameMode | MultiplayerVariant, timerSeconds?: number)
   hint: string
 } {
   switch (mode) {
+    // Timer-like modes (singleplayer 'timer', multiplayer 'score'/'reaction')
+    // derive difficulty from the configured window, matching singleplayer.
     case 'timer':
     case 'score':
+    case 'reaction': {
       let difficulty: 'HARD' | 'NORMAL' | 'EASY' = 'NORMAL'
       if (timerSeconds === 5) difficulty = 'HARD'
       else if (timerSeconds === 15) difficulty = 'EASY'
       return {
         difficulty,
         variant: 'TIMER',
-        hint: 'Score as high as you can before the timer runs out!',
+        hint:
+          mode === 'reaction'
+            ? 'Reaction mode favors fast, precise inputs.'
+            : 'Score as high as you can before the timer runs out!',
       }
+    }
+    // Endless-like modes (singleplayer 'endless', multiplayer 'elimination')
+    // have no difficulty rating, matching singleplayer endless.
     case 'endless':
       return {
         difficulty: 'HARD',
         variant: 'ENDLESS',
         hint: 'Endless mode decreases the time between codes!',
-      }
-    case 'reaction':
-      return {
-        difficulty: 'HARD',
-        variant: 'TIMER',
-        hint: 'Reaction mode favors fast, precise inputs.',
       }
     case 'elimination':
       return {
@@ -82,7 +85,7 @@ export default function CountdownScreen({
 
           {/* Difficulty + Mode variant row */}
           <div className="flex items-center gap-4">
-            {mode !== 'endless' && (
+            {mode !== 'endless' && mode !== 'elimination' && (
               <span className="font-pixel text-4xl font-bold text-retro-text">
                 {difficulty}
               </span>
