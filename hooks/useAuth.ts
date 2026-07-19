@@ -57,7 +57,7 @@ export function useAuth() {
     if (!supabase) return
     await supabase.auth.signInWithOAuth({
       provider,
-      options: { redirectTo: window.location.href },
+      options: { redirectTo: window.location.origin },
     })
   }, [])
 

@@ -38,7 +38,7 @@ The Edge Functions live under `supabase/functions/`. Each is deployed individual
 
 | Function | Deploy command | Notes |
 | --- | --- | --- |
-| `submitTelemetry` | `npx supabase functions deploy submitTelemetry` | Verifies the caller's JWT (default). |
+| `submitTelemetry` | `npx supabase functions deploy submitTelemetry` | JWT verification disabled via `config.toml` so the browser's anonymous CORS preflight is accepted. Relies on the anon key + RLS. |
 | `createLobby` | `npx supabase functions deploy createLobby --no-verify-jwt` | Uses the service role key; invoked anon, so JWT verification is skipped. |
 | `changeMode` | `npx supabase functions deploy changeMode --no-verify-jwt` | Uses the service role key; invoked anon. |
 | `submitStateToLeaderboard` | `npx supabase functions deploy submitStateToLeaderboard --no-verify-jwt` | Uses the service role key; invoked anon. |
@@ -52,7 +52,7 @@ npx supabase functions deploy changeMode --no-verify-jwt
 npx supabase functions deploy submitStateToLeaderboard --no-verify-jwt
 ```
 
-> The `--no-verify-jwt` flag is required for the three functions that run with the service role key and are called directly from the browser without an authenticated user session. `submitTelemetry` keeps JWT verification on because it relies on the anon key and per-row RLS.
+> `submitTelemetry` is called directly from the browser with the anon key, and its RLS policy permits anon inserts. JWT verification is disabled for it in `config.toml` (`[functions.submitTelemetry] verify_jwt = false`) so the anonymous CORS preflight is not rejected by the gateway. The other three functions run with the service role key and are invoked anon, so they use the `--no-verify-jwt` deploy flag.
 
 ### 3. Frontend environment variables
 
@@ -64,6 +64,23 @@ VITE_SUPABASE_PUBLISHABLE_KEY=<your-publishable-anon-key>
 ```
 
 The frontend reads these via `lib/supabase.ts` to enable multiplayer and telemetry submission.
+
+### 4. OAuth redirect URLs
+
+The multiplayer mode supports GitHub/Discord sign-in via `supabase.auth.signInWithOAuth`, which redirects back to `window.location.origin` after login. Supabase only allows redirects to URLs listed in the project's allowlist, so every production (and local) origin must be registered.
+
+These are configured in `supabase/config.toml` under `[auth]`:
+
+```toml
+[auth]
+site_url = "http://127.0.0.1:5173"
+additional_redirect_urls = [
+  "http://127.0.0.1:5173",
+  "https://redshift-qte-demo.urs.deno.net",
+]
+```
+
+Add any additional deployment domains to `additional_redirect_urls` (comma-separated, no trailing comma), then re-apply the auth config with `npx supabase db push` (or set them in the dashboard under Authentication → URL Configuration). Without this, the OAuth callback is rejected in production even though it works on localhost.
 
 ### Local development
 

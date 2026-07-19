@@ -30,9 +30,18 @@ port = 54324
 [auth]
 enabled = true
 site_url = "http://127.0.0.1:5173"
-additional_redirect_urls = ["http://127.0.0.1:5173"]
+additional_redirect_urls = [
+  "http://127.0.0.1:5173",
+  "https://redshift-qte-demo.urs.deno.net",
+]
 jwt_expiry = 3600
 enable_signup = true
 
 [analytics]
 enabled = false
+
+[functions.submitTelemetry]
+# Called directly from the browser with the anon key; RLS on `public.telemetry`
+# permits anon inserts. JWT verification must be off so the anonymous CORS
+# preflight (OPTIONS, no Authorization header) is not rejected by the gateway.
+verify_jwt = false
