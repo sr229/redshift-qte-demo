@@ -4,7 +4,6 @@ import type {
   MultiplayerParticipant,
   MultiplayerVariant,
 } from '../lib/game-engine'
-import { generateSequence } from '../lib/game-engine'
 import { isMultiplayerEnabled, supabase } from '../lib/supabase'
 import type { RealtimeChannel, RealtimePostgresChangesPayload } from '@supabase/supabase-js'
 
@@ -262,7 +261,7 @@ export function useMultiplayerState(): UseMultiplayerState {
           alive: true,
           ready: false,
           finished: false,
-          sequence: generateSequence(4),
+        sequence: null,
           progress: 0,
         }
         const newLobby = emptyLobby(normalized, name, 'score', `host_${normalized}`)
@@ -293,7 +292,7 @@ export function useMultiplayerState(): UseMultiplayerState {
         alive: true,
         ready: false,
         finished: false,
-        sequence: generateSequence(4),
+        sequence: null,
         progress: 0,
       }
       localParticipantRef.current = participant
