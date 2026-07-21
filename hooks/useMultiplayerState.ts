@@ -31,7 +31,7 @@ export interface UseMultiplayerState {
   /** Host-only: persist final standings and broadcast gameover. */
   submitResults: () => Promise<void>
   /** Broadcast the local participant's latest state to the lobby via presence. */
-  trackLocal: (participant: MultiplayerParticipant) => void
+  trackLocal: (participant: MultiplayerParticipant, immediate?: boolean) => void
   /** Toggle the local participant's ready status in the lobby. */
   readyUp: () => void
   /** End the current round: host persists standings + broadcasts gameover. */
@@ -83,6 +83,8 @@ export function useMultiplayerState(): UseMultiplayerState {
   const lobbyIdRef = useRef<string | null>(null)
   const localParticipantRef = useRef<MultiplayerParticipant | null>(null)
   const heartbeatRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const throttleTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const lastTrackTimeRef = useRef<number>(0)
 
   const teardown = useCallback(() => {
     if (channelRef.current) {
@@ -93,6 +95,11 @@ export function useMultiplayerState(): UseMultiplayerState {
       clearInterval(heartbeatRef.current)
       heartbeatRef.current = null
     }
+    if (throttleTimeoutRef.current) {
+      clearTimeout(throttleTimeoutRef.current)
+      throttleTimeoutRef.current = null
+    }
+    lastTrackTimeRef.current = 0
   }, [])
 
   // Upsert the local participant into the `lobby_participants` roster with a
@@ -499,11 +506,38 @@ export function useMultiplayerState(): UseMultiplayerState {
   useEffect(() => teardown, [teardown])
 
   const trackLocal = useCallback(
-    (participant: MultiplayerParticipant) => {
+    (participant: MultiplayerParticipant, immediate = false) => {
       // Keep the latest participant state so the heartbeat upsert stays current.
       localParticipantRef.current = participant
       if (isMultiplayerEnabled && supabase && channelRef.current) {
-        void channelRef.current.track(participant)
+        if (immediate) {
+          if (throttleTimeoutRef.current) {
+            clearTimeout(throttleTimeoutRef.current)
+            throttleTimeoutRef.current = null
+          }
+          void channelRef.current.track(participant)
+          lastTrackTimeRef.current = Date.now()
+        } else {
+          const now = Date.now()
+          const timeSinceLastTrack = now - lastTrackTimeRef.current
+          if (timeSinceLastTrack >= 250) {
+            if (throttleTimeoutRef.current) {
+              clearTimeout(throttleTimeoutRef.current)
+              throttleTimeoutRef.current = null
+            }
+            void channelRef.current.track(participant)
+            lastTrackTimeRef.current = now
+          } else if (!throttleTimeoutRef.current) {
+            const remaining = 250 - timeSinceLastTrack
+            throttleTimeoutRef.current = setTimeout(() => {
+              throttleTimeoutRef.current = null
+              if (isMultiplayerEnabled && supabase && channelRef.current && localParticipantRef.current) {
+                void channelRef.current.track(localParticipantRef.current)
+                lastTrackTimeRef.current = Date.now()
+              }
+            }, remaining)
+          }
+        }
       } else {
         // Mock mode (no backend): sync into lobby state so effects that monitor
         // participants (e.g. all-finished detection, ready status) work locally.
@@ -525,7 +559,7 @@ export function useMultiplayerState(): UseMultiplayerState {
     const participant = localParticipantRef.current
     if (!participant) return
     const updated = { ...participant, ready: !participant.ready }
-    trackLocal(updated)
+    trackLocal(updated, true)
   }, [trackLocal])
 
   // End the round. Only the host persists standings and broadcasts gameover;

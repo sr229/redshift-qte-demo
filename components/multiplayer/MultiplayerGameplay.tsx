@@ -23,7 +23,7 @@ interface MultiplayerGameplayProps {
   lobby: Lobby
   localParticipantId: string | null
   onLeave: () => void
-  trackLocal: (participant: MultiplayerParticipant) => void
+  trackLocal: (participant: MultiplayerParticipant, immediate?: boolean) => void
   endRound: () => void
   onTelemetry?: (telemetry: Telemetry) => void
 }
@@ -98,7 +98,7 @@ export default function MultiplayerGameplay({
       sequence: state.sequence,
       progress: state.progress,
     }
-    trackLocal(updated)
+    trackLocal(updated, false)
     // NOTE: intentionally NOT depending on `lobby.participants`. `trackLocal`
     // writes back into lobby.participants (mock mode) or triggers a presence
     // sync that rewrites it (real mode); depending on it would re-run this
@@ -131,7 +131,7 @@ export default function MultiplayerGameplay({
         finished: true,
         sequence: single.state.sequence,
         progress: single.state.progress,
-      })
+      }, true)
       onTelemetry?.(single.telemetry)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -152,7 +152,7 @@ export default function MultiplayerGameplay({
         finished: true,
         sequence: single.state.sequence,
         progress: single.state.progress,
-      })
+      }, true)
       onTelemetry?.(single.telemetry)
       void endRound()
     }
