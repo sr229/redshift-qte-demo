@@ -108,7 +108,7 @@ export default function MultiplayerGameplay({
   }, [
     single.state.phase,
     single.state.score,
-    single.state.sequence,
+    single.state.sequence?.id,
     single.state.progress,
     eliminated,
     localParticipantId,
