@@ -7,6 +7,7 @@ import {
   generateSequence,
 } from './sequence'
 import type { EngineCallbacks, EngineMode, EngineState } from './types'
+import { keyToDirection } from './input'
 
 export interface GameEngineOptions {
   mode: EngineMode
@@ -202,7 +203,7 @@ export class GameEngine {
   /** Initialize keyboard input listeners. */
   initInput(): void {
     const onKey = (e: KeyboardEvent) => {
-      const direction = this.keyToDirection(e.key)
+      const direction = keyToDirection(e.key)
       if (direction) this.handleInput(direction)
     }
     window.addEventListener('keydown', onKey)
@@ -213,25 +214,6 @@ export class GameEngine {
   destroyInput(): void {
     this.cleanupInput?.()
     this.cleanupInput = undefined
-  }
-
-  private keyToDirection(key: string): QteDirection | null {
-    switch (key) {
-      case 'ArrowUp':
-      case 'w':
-        return 'up'
-      case 'ArrowDown':
-      case 's':
-        return 'down'
-      case 'ArrowLeft':
-      case 'a':
-        return 'left'
-      case 'ArrowRight':
-      case 'd':
-        return 'right'
-      default:
-        return null
-    }
   }
 
   private cleanupInput?: () => void

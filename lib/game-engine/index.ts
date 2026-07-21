@@ -1,5 +1,6 @@
 export { GameEngine } from './GameEngine'
 export type { GameEngineOptions } from './GameEngine'
+export { keyToDirection } from './input'
 export type {
   GamePhase,
   QteDirection,
@@ -13,6 +14,12 @@ export type {
   MultiplayerParticipant,
   Lobby,
 } from './multiplayer'
+export {
+  isPlayerEliminated,
+  shouldEndTimerRound,
+  hasLocalPlayerWonElimination,
+  buildParticipant,
+} from './match'
 export {
   generateSequence,
   endlessTimeLimit,

@@ -1,9 +1,15 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef } from 'react'
 import { PixelAvatar, PixelCard } from '@pxlkit/ui-kit'
 import { PxlKitIcon } from '@pxlkit/core'
 import { Clock, SparkleSmall } from '@pxlkit/ui'
 import type { ReactElement } from 'react'
 import type { Lobby, MultiplayerParticipant, QteDirection } from '../../lib/game-engine'
+import {
+  isPlayerEliminated,
+  shouldEndTimerRound,
+  hasLocalPlayerWonElimination,
+  buildParticipant,
+} from '../../lib/game-engine'
 import { useSingleplayerState } from '../../hooks/useSingleplayerState'
 import type { Telemetry } from '../../lib/telemetry'
 
@@ -54,7 +60,6 @@ export default function MultiplayerGameplay({
   const isElimination = lobby.variant === 'elimination'
   const engineMode = isElimination ? 'endless' : 'timer'
 
-  const [eliminated, setEliminated] = useState(false)
   const eliminatedRef = useRef(false)
   const endedRef = useRef(false)
   // Local player's display name, captured once at match start so the presence
@@ -75,7 +80,6 @@ export default function MultiplayerGameplay({
     if (lobby.phase !== 'playing') return
     if (endedRef.current) return
     eliminatedRef.current = false
-    setEliminated(false)
     localNameRef.current = lobby.participants.find((p) => p.id === localParticipantId)?.name ?? 'You'
     single.startImmediate(engineMode, isElimination ? 15 : lobby.windowSeconds, lobby.sequenceLength)
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -88,16 +92,7 @@ export default function MultiplayerGameplay({
   useEffect(() => {
     const state = single.state
     if (state.phase !== 'playing') return
-    const updated: MultiplayerParticipant = {
-      id: localParticipantId ?? 'local',
-      name: localNameRef.current,
-      score: state.score,
-      alive: !eliminated,
-      ready: true,
-      finished: eliminated || state.phase === 'gameover',
-      sequence: state.sequence,
-      progress: state.progress,
-    }
+    const updated = buildParticipant(state, localParticipantId, localNameRef.current, lobby.variant)
     console.log('Syncing state:', updated.sequence?.id)
     trackLocal(updated, false)
     // NOTE: intentionally NOT depending on `lobby.participants`. `trackLocal`
@@ -111,32 +106,23 @@ export default function MultiplayerGameplay({
     single.state.score,
     single.state.sequence?.id,
     single.state.progress,
-    eliminated,
     localParticipantId,
     trackLocal,
+    lobby.variant,
   ])
 
   // ── Elimination: local player eliminated when their engine ends ──────────
   useEffect(() => {
     if (!isElimination) return
-    if (single.state.phase === 'gameover' && !eliminatedRef.current) {
+    if (isPlayerEliminated(single.state, lobby.variant) && !eliminatedRef.current) {
       eliminatedRef.current = true
-      setEliminated(true)
       // Broadcast the final dead state so opponents see the elimination.
-      trackLocal({
-        id: localParticipantId ?? 'local',
-        name: localNameRef.current,
-        score: single.state.score,
-        alive: false,
-        ready: true,
-        finished: true,
-        sequence: single.state.sequence,
-        progress: single.state.progress,
-      }, true)
+      const updated = buildParticipant(single.state, localParticipantId, localNameRef.current, lobby.variant)
+      trackLocal(updated, true)
       onTelemetry?.(single.telemetry)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [single.state.phase, isElimination, single.telemetry, single.state.score, single.state.sequence, single.state.progress, localParticipantId, trackLocal, onTelemetry])
+  }, [single.state.phase, isElimination, single.telemetry, single.state.score, single.state.sequence, single.state.progress, localParticipantId, trackLocal, onTelemetry, lobby.variant])
 
   // ── Timer-like variants: end the round when the local clock runs out ─────
   useEffect(() => {
@@ -144,27 +130,18 @@ export default function MultiplayerGameplay({
     if (single.state.phase === 'gameover' && !endedRef.current) {
       endedRef.current = true
       // Broadcast the final finished state so opponents/host see completion.
-      trackLocal({
-        id: localParticipantId ?? 'local',
-        name: localNameRef.current,
-        score: single.state.score,
-        alive: true,
-        ready: true,
-        finished: true,
-        sequence: single.state.sequence,
-        progress: single.state.progress,
-      }, true)
+      const updated = buildParticipant(single.state, localParticipantId, localNameRef.current, lobby.variant)
+      trackLocal(updated, true)
       onTelemetry?.(single.telemetry)
       void endRound()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [single.state.phase, isElimination, endRound, single.telemetry, single.state.score, single.state.sequence, single.state.progress, localParticipantId, trackLocal, onTelemetry])
+  }, [single.state.phase, isElimination, endRound, single.telemetry, single.state.score, single.state.sequence, single.state.progress, localParticipantId, trackLocal, onTelemetry, lobby.variant])
 
   // ── Timer-like variants: end the round when ALL participants are done ────
   useEffect(() => {
     if (lobby.phase !== 'playing' || isElimination) return
-    const allFinished = lobby.participants.every((p) => p.finished)
-    if (allFinished && lobby.participants.length > 0 && !endedRef.current) {
+    if (shouldEndTimerRound(lobby.participants) && !endedRef.current) {
       endedRef.current = true
       void endRound()
     }
@@ -173,15 +150,17 @@ export default function MultiplayerGameplay({
   // ── Elimination: local player wins when last one standing ────────────────
   useEffect(() => {
     if (lobby.phase !== 'playing' || !isElimination || eliminatedRef.current) return
-    const aliveCount = [localParticipantId, ...opponents.map((o) => o.id)].filter((id) =>
-      lobby.participants.find((p) => p.id === id)?.alive,
-    ).length
-    if (aliveCount <= 1 && !eliminatedRef.current && !endedRef.current) {
+
+    const localDisplay = buildParticipant(single.state, localParticipantId, localNameRef.current, lobby.variant)
+    const opponents = lobby.participants.filter((p) => p.id !== localParticipantId)
+    const displayParticipants = [localDisplay, ...opponents]
+
+    if (hasLocalPlayerWonElimination(displayParticipants, localParticipantId) && !endedRef.current) {
       endedRef.current = true
       onTelemetry?.(single.telemetry)
       void endRound()
     }
-  }, [lobby.phase, lobby.variant, localParticipantId, opponents, lobby.participants, isElimination, single.telemetry, endRound])
+  }, [lobby.phase, lobby.variant, localParticipantId, lobby.participants, isElimination, single.telemetry, single.state, endRound, onTelemetry])
 
   // Reset the ended flag when a new lobby/round starts.
   useEffect(() => {
@@ -194,20 +173,12 @@ export default function MultiplayerGameplay({
   // ── Derived display values ──────────────────────────────────────────────
   const state = single.state
   const activeSequence = state.sequence?.steps ?? DEFAULT_STEPS
+  const eliminated = isPlayerEliminated(state, lobby.variant)
 
   // The local player's row is driven directly by the live engine state
   // (single.state) so it updates in real time without depending on the
   // presence round-trip. Opponents come from lobby presence (lobby.participants).
-  const localDisplay: MultiplayerParticipant = {
-    id: localParticipantId ?? 'local',
-    name: localNameRef.current,
-    score: state.score,
-    alive: !eliminated,
-    ready: true,
-    finished: eliminated || state.phase === 'gameover',
-    sequence: state.sequence,
-    progress: state.progress,
-  }
+  const localDisplay = buildParticipant(state, localParticipantId, localNameRef.current, lobby.variant)
   const displayParticipants = [localDisplay, ...opponents]
 
   const playersRemaining = isElimination
